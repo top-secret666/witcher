@@ -22,11 +22,16 @@ namespace Witcher.Visuals
         public float headBobSpeed = 9.5f;
         public float swordBobPx = 11f;
 
+        [Header("L3 near road (walking layer)")]
+        [Tooltip("Scrolling road + dark near pines between the parting pines (L2) and the sword. Tune it on the NearRoadLayer component under PitchUI/BobRoot/L3_RoadNearPines in Play mode.")]
+        public bool buildNearRoad = true;
+
         Canvas _canvas;
         RectTransform _bobRoot;
         RectTransform _vistaRt;
         SideRow[] _rows;
         RectTransform _swordRt;
+        NearRoadLayer _nearRoad;
         Vector2 _vistaBase;
         Vector2 _swordBase;
         FirstPersonController _mover;
@@ -134,6 +139,20 @@ namespace Witcher.Visuals
                 list.Add(MakeSideRow("L2_Near", _bobRoot, sides, depth: 0.9f, partMul: 1.05f));
             }
             _rows = list.ToArray();
+
+            // L3 near road + near pines: moves toward the viewer while walking
+            _nearRoad = null;
+            if (buildNearRoad)
+            {
+                var roadGo = new GameObject("L3_RoadNearPines", typeof(RectTransform));
+                roadGo.transform.SetParent(_bobRoot, false);
+                var roadRt = roadGo.GetComponent<RectTransform>();
+                StretchFull(roadRt);
+                Overscan(roadRt, 24f);
+                _nearRoad = roadGo.AddComponent<NearRoadLayer>();
+                _nearRoad.mover = _mover;
+                _nearRoad.Build();
+            }
 
             BuildSwordUi(ui.transform);
             ApplyPart(0f);
