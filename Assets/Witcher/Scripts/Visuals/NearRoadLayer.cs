@@ -44,21 +44,37 @@ namespace Witcher.Visuals
         [Tooltip("Horizontal resolution of the generated road image (pixel-art chunkiness).")]
         [Range(120, 960)] public int roadPixelWidth = 400;
 
-        [Header("Near pines")]
-        public int pineCount = 8;
+        [Header("Near pines (dense rows along both road edges)")]
+        [Tooltip("Rows of pines on each side of the road (row 0 hugs the road edge).")]
+        [Range(1, 6)] public int pineRows = 3;
+        [Tooltip("Pines per row per side (total = rows x this x 2).")]
+        [Range(2, 40)] public int pinesPerRow = 16;
         [Tooltip("Depth range the pines cycle through (m). Larger = sparser.")]
         public float span = 18f;
         [Tooltip("Pines recycle to the far end once closer than this (m).")]
-        public float nearClip = 0.8f;
+        public float nearClip = 0.6f;
         [Tooltip("Distance over which a new pine fades in at the far end (m).")]
         public float emergeLength = 5f;
-        [Tooltip("Gap between the road edge and the pines (m).")]
-        public float sideMin = 2.6f;
-        public float sideMax = 4.6f;
-        public float heightMin = 2.4f;
-        public float heightMax = 3.4f;
+        [Tooltip("Extra gap between the road texture's dirt edge and row 0 (m). 0 = trees stand right at the edge.")]
+        public float sideMin = 0f;
+        [Tooltip("Where the dirt ends inside the road texture, as a fraction of its half width.")]
+        [Range(0f, 1f)] public float dirtEdge = 0.62f;
+        [Tooltip("Lateral distance between rows (m).")]
+        public float rowSpacing = 0.9f;
+        [Tooltip("Random lateral jitter inside a row (m).")]
+        public float rowJitter = 0.45f;
+        public float heightMin = 2.0f;
+        public float heightMax = 3.0f;
+        [Tooltip("Soft cap on a pine's on-screen height (fraction of screen height) so close trees stay in the bottom area and never cover the castle.")]
+        [Range(0.1f, 2f)] public float maxScreenHeight = 0.5f;
+        [Tooltip("Each row further out is this much smaller (fraction).")]
+        [Range(0f, 0.5f)] public float rowShrink = 0.1f;
         [Tooltip("Colour multiplier for the near pines (lower = darker).")]
-        [Range(0f, 1f)] public float pineTint = 0.78f;
+        [Range(0f, 1f)] public float pineTint = 0.72f;
+        [Tooltip("Each row further out is this much lighter.")]
+        [Range(0f, 0.3f)] public float rowLighten = 0.08f;
+        [Tooltip("Random brightness variation per tree.")]
+        [Range(0f, 0.3f)] public float tintJitter = 0.06f;
         public int seed = 5;
 
         const string RoadPath = "Pitch/T_L4_Road";
@@ -76,6 +92,10 @@ namespace Witcher.Visuals
             public float height;  // world height (m)
             public float phase;   // 0..span offset along the loop
             public float lastZ;
+            public int row;
+            public float side;
+            public float tint;
+            public float sortKey;
         }
 
         RectTransform _rect;
@@ -144,23 +164,36 @@ namespace Witcher.Visuals
 
             if (found > 0)
             {
-                int n = Mathf.Max(0, pineCount);
-                for (int i = 0; i < n; i++)
+                int rows = Mathf.Max(1, pineRows);
+                int per = Mathf.Max(1, pinesPerRow);
+                int idx = 0;
+                for (int r = 0; r < rows; r++)
                 {
-                    var p = new Pine();
-                    var go = new GameObject("NearPine_" + i, typeof(RectTransform));
-                    go.transform.SetParent(transform, false);
-                    p.rt = go.GetComponent<RectTransform>();
-                    p.rt.anchorMin = Vector2.zero;
-                    p.rt.anchorMax = Vector2.zero;
-                    p.rt.pivot = new Vector2(0.5f, 0f);
-                    p.img = go.AddComponent<RawImage>();
-                    p.img.raycastTarget = false;
-                    float side = (i % 2 == 0) ? -1f : 1f;
-                    p.phase = (i + (float)_rng.NextDouble() * 0.8f) * span / n;
-                    Randomize(p, side, i);
-                    p.lastZ = float.MaxValue;
-                    _pines.Add(p);
+                    for (int sd = 0; sd < 2; sd++)
+                    {
+                        float side = sd == 0 ? -1f : 1f;
+                        // stagger rows/sides so trunks don't line up
+                        float offset = ((r * 0.37f + sd * 0.53f) % 1f) * span / per;
+                        for (int k = 0; k < per; k++)
+                        {
+                            var p = new Pine();
+                            var go = new GameObject("NearPine_r" + r + (sd == 0 ? "L" : "R") + k, typeof(RectTransform));
+                            go.transform.SetParent(transform, false);
+                            p.rt = go.GetComponent<RectTransform>();
+                            p.rt.anchorMin = Vector2.zero;
+                            p.rt.anchorMax = Vector2.zero;
+                            p.rt.pivot = new Vector2(0.5f, 0f);
+                            p.img = go.AddComponent<RawImage>();
+                            p.img.raycastTarget = false;
+                            p.img.enabled = false;
+                            p.row = r;
+                            p.side = side;
+                            p.phase = offset + (k + (float)_rng.NextDouble() * 0.6f) * span / per;
+                            Randomize(p, idx++);
+                            p.lastZ = float.MaxValue;
+                            _pines.Add(p);
+                        }
+                    }
                 }
             }
             else
@@ -171,10 +204,13 @@ namespace Witcher.Visuals
             _dirty = true;
         }
 
-        void Randomize(Pine p, float side, int hint)
+        void Randomize(Pine p, int hint)
         {
-            p.x = side * (roadWorldWidth * 0.5f + Mathf.Lerp(sideMin, sideMax, (float)_rng.NextDouble()));
-            p.height = Mathf.Lerp(heightMin, heightMax, (float)_rng.NextDouble());
+            float edge = roadWorldWidth * 0.5f * dirtEdge + sideMin;
+            p.x = p.side * (edge + p.row * rowSpacing + (float)_rng.NextDouble() * rowJitter);
+            float shrink = Mathf.Max(0.2f, 1f - rowShrink * p.row);
+            p.height = Mathf.Lerp(heightMin, heightMax, (float)_rng.NextDouble()) * shrink;
+            p.tint = Mathf.Clamp01(pineTint * (1f + rowLighten * p.row) + ((float)_rng.NextDouble() * 2f - 1f) * tintJitter);
             Texture2D t = null;
             for (int k = 0; k < _pineTex.Length && t == null; k++)
                 t = _pineTex[(hint + _rng.Next(_pineTex.Length) + k) % _pineTex.Length];
@@ -329,11 +365,13 @@ namespace Witcher.Visuals
                 var p = _pines[i];
                 float z = nearClip + Mathf.Repeat(p.phase - _treePhase, spanSafe);
                 if (z > p.lastZ + spanSafe * 0.5f)
-                    Randomize(p, Mathf.Sign(p.x), i); // just recycled to the far end - new look
+                    Randomize(p, i); // just recycled to the far end - new look
                 p.lastZ = z;
 
                 float yb = horizon - cameraHeight * focal / z;           // base height (fraction from bottom)
                 float hFrac = p.height * focal / z;                      // tree height in screen heights
+                float cap = Mathf.Max(0.05f, maxScreenHeight);
+                hFrac = cap * (float)System.Math.Tanh(hFrac / cap);      // soft cap: close trees stay low
                 float alpha = Mathf.Clamp01((nearClip + spanSafe - z) / Mathf.Max(0.01f, emergeLength));
                 float hPx = hFrac * size.y;
                 float wPx = p.tex != null ? hPx * p.tex.width / (float)p.tex.height : hPx * 0.4f;
@@ -347,15 +385,18 @@ namespace Witcher.Visuals
 
                 p.rt.sizeDelta = new Vector2(wPx, hPx);
                 p.rt.anchoredPosition = new Vector2(xPx, yb * size.y);
-                p.img.color = new Color(pineTint, pineTint, pineTint, alpha);
+                p.img.color = new Color(p.tint, p.tint, p.tint, alpha);
+                p.sortKey = z * z + p.x * p.x; // painter order by true distance
                 _sorted.Add(p);
             }
 
             // far first, near last; index 0 is the road
-            _sorted.Sort((a, b) => b.lastZ.CompareTo(a.lastZ));
+            _sorted.Sort(FarFirst);
             for (int i = 0; i < _sorted.Count; i++)
                 _sorted[i].rt.SetSiblingIndex(1 + i);
         }
+
+        static int FarFirst(Pine a, Pine b) => b.sortKey.CompareTo(a.sortKey);
 
         static Color32[] ReadPixelsSafe(Texture2D src, out int w, out int h)
         {
