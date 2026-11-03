@@ -15,13 +15,14 @@ namespace Witcher.Visuals
         [System.Serializable]
         public class Settings
         {
-            [Range(1, 16)] public float pixelSize = 3f;
-            [Range(4, 32)] public float colorSteps = 12f;
-            [Range(0f, 1f)] public float ditherStrength = 0.35f;
-            [Range(0.5f, 2f)] public float contrast = 1.15f;
-            [Range(0f, 1.5f)] public float saturation = 0.85f;
-            [Range(0f, 1f)] public float vignette = 0.45f;
-            public Color tint = new Color(0.88f, 0.92f, 1f, 1f);
+            // Hybrid retro FPS: chunky pixels + dither (pair with URP renderScale ~0.35).
+            [Range(1, 16)] public float pixelSize = 2.5f;
+            [Range(4, 32)] public float colorSteps = 14f;
+            [Range(0f, 1f)] public float ditherStrength = 0.28f;
+            [Range(0.5f, 2f)] public float contrast = 1.1f;
+            [Range(0f, 1.5f)] public float saturation = 1.0f;
+            [Range(0f, 1f)] public float vignette = 0.22f;
+            public Color tint = new Color(0.95f, 0.96f, 1f, 1f);
             public RenderPassEvent injectionPoint = RenderPassEvent.AfterRenderingPostProcessing;
         }
 

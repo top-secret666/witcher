@@ -3,24 +3,23 @@ using UnityEngine;
 namespace Witcher.Player
 {
     /// <summary>
-    /// Keeps a weapon model glued to the camera and adds a soft idle sway.
-    /// Optional point light makes a "silver/magic blade" glow like the mood refs.
+    /// Viewmodel sword glued to the camera + cyan blade glow (reference style).
     /// </summary>
     public sealed class HeldWeapon : MonoBehaviour
     {
         [Header("Pose (local to camera)")]
-        public Vector3 localPosition = new Vector3(0.28f, -0.32f, 0.55f);
-        public Vector3 localEuler = new Vector3(5f, -10f, -8f);
+        public Vector3 localPosition = new Vector3(0.35f, -0.28f, 0.55f);
+        public Vector3 localEuler = new Vector3(8f, 95f, -10f);
 
         [Header("Idle sway")]
-        public float swayAmount = 0.012f;
-        public float swaySpeed = 1.6f;
+        public float swayAmount = 0.01f;
+        public float swaySpeed = 1.4f;
 
         [Header("Glow")]
         public Light bladeGlow;
         public Color glowColor = new Color(0.35f, 0.95f, 1f, 1f);
-        public float glowIntensity = 1.8f;
-        public float glowRange = 3.5f;
+        [Range(0f, 12f)] public float glowIntensity = 4.5f;
+        [Range(1f, 20f)] public float glowRange = 8f;
 
         Transform _camera;
 
@@ -28,14 +27,20 @@ namespace Witcher.Player
         {
             var cam = GetComponentInParent<Camera>();
             _camera = cam != null ? cam.transform : transform.parent;
+            ApplyGlow();
+        }
 
-            if (bladeGlow != null)
-            {
-                bladeGlow.color = glowColor;
-                bladeGlow.intensity = glowIntensity;
-                bladeGlow.range = glowRange;
-                bladeGlow.shadows = LightShadows.None;
-            }
+        void OnValidate() => ApplyGlow();
+
+        void ApplyGlow()
+        {
+            if (bladeGlow == null)
+                return;
+
+            bladeGlow.color = glowColor;
+            bladeGlow.intensity = glowIntensity;
+            bladeGlow.range = glowRange;
+            bladeGlow.shadows = LightShadows.None;
         }
 
         void LateUpdate()

@@ -11,11 +11,12 @@ Dark-fantasy / retro pixel prototype. Continues the spirit of the [Java Chapter 
 
 Open the folder `D:\HUH\witcher` (or this clone) in Unity Hub → **Add** → open.
 
-## Today: get a dark-fantasy look in 2 clicks
+## Today: architecture-first demo
 
-1. Open the project in Unity and wait for scripts to compile.
-2. Menu bar → **Witcher → 2. Build Dark Fantasy Demo Scene**
-3. Press **Play ▶**
+1. Open in Unity, wait for compile.
+2. **Witcher → Architecture → 1. Generate Materials + Profiles + Prefabs**
+3. **Witcher → Architecture → 2. Rebuild Demo Scene From Prefabs**
+4. **Play ▶**
 
 | Control | Action |
 |--------|--------|
@@ -24,33 +25,24 @@ Open the folder `D:\HUH\witcher` (or this clone) in Unity Hub → **Add** → op
 | Shift | Sprint |
 | Esc | Unlock cursor |
 
-### Mood
+Docs: `docs/ARCHITECTURE.md`, `docs/EDITOR_TODAY.md`
 
-Select `DarkFantasyAtmosphere` in the Hierarchy, or use:
+### Mood / pixel
 
-- **Witcher → 3. Apply Mood → Castle Dusk** (purple / blood sunset)
-- **Witcher → 3. Apply Mood → Manor Night** (teal moon night)
+- Atmosphere: `Assets/Witcher/Data/Atmosphere/*.asset` or **Architecture → 3**
+- Pixel: `Assets/Settings/PC_Renderer` → **Retro Look**
 
-Reference stills: `Assets/Witcher/Art/Reference/`
-
-### Pixel crunch
-
-- **Witcher → 1. Add Retro Look To URP Renderer** (also runs automatically when building the demo)
-- Tweak: `Assets/Settings/PC_Renderer` → **Retro Look** (pixel size, color steps, dither, vignette)
-
-## Project layout
+## Layout
 
 ```
 Assets/Witcher/
-  Art/Reference/     mood images
-  Editor/            one-click setup menus
-  Scenes/            DarkFantasy_Demo (after menu)
-  Scripts/Player/    FPS + held sword
-  Scripts/Visuals/   atmosphere + retro look
-  Shaders/           RetroLook.shader
+  Art/Materials/     shared mats
+  Data/Atmosphere/   ScriptableObject moods
+  Prefabs/           Castle modules, Pine, Player, Atmosphere
+  Scenes/            DarkFantasy_Demo
+  Scripts/           Core, Data, Environment, Player, Visuals
+  Editor/            ArchitectureBuilder
+  Shaders/           RetroLook
 ```
 
-## Notes
-
-- Demo castle / forest are **blockout primitives** — replace with real meshes whenever you want; keep the lighting + retro pass.
-- Game code package namespace: `Witcher.*`
+Namespaces: `Witcher.Core`, `Witcher.Data`, `Witcher.Environment`, `Witcher.Player`, `Witcher.Visuals`
