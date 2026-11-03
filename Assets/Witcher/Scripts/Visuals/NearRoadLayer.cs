@@ -32,7 +32,7 @@ namespace Witcher.Visuals
         [Tooltip("World width covered by the road texture (dirt + grassy verges), metres.")]
         public float roadWorldWidth = 4.2f;
         [Tooltip("World length of one vertical repeat of the road texture, metres.")]
-        public float tileLength = 6f;
+        public float tileLength = 13.3f;
         [Tooltip("Road centre at the bottom of the screen (0..1 of width).")]
         [Range(0f, 1f)] public float nearCenterX = 0.5f;
         [Tooltip("Road centre at the far end, lined up with the painted path in the vista.")]
