@@ -19,7 +19,7 @@ MonoBehaviour:
     ditherStrength: 0.02
     contrast: 1
     saturation: 1
-    vignette: 0.08
+    vignette: 0.15
     tint: {r: 0.98, g: 0.93, b: 0.95, a: 1}
     injectionPoint: 600
 --- !u!114 &11400000
