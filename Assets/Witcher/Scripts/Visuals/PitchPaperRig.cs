@@ -17,6 +17,30 @@ namespace Witcher.Visuals
         public float maxPartPx = 580f;
         public float startInsetPx = -120f; // closer/denser toward player at start
 
+        [Header("L2 parting pines - walk-driven passing")]
+        [Tooltip("On: the L2 pines continuously slide outward and grow while walking (like passing trees) and recycle. Off: old one-shot parting.")]
+        public bool l2PassingMotion = true;
+        [Tooltip("Extra vertical stretch of the L2 pines (taller trees). Scales up from the bottom edge.")]
+        public float l2HeightScale = 1.15f;
+        [Tooltip("Base scale of the L2 pines when they appear (far).")]
+        public float l2BaseScale = 1.0f;
+        [Tooltip("Extra scale gained while passing (near row gets the full amount).")]
+        public float l2Grow = 0.35f;
+        [Tooltip("Sideways offset (px) of a pine row when it appears (far). Ends at maxPartPx x row multiplier.")]
+        public float l2StartPx = 100f;
+        [Tooltip("How much closer a pine gets during one pass (zFar / zNear). Higher = stronger perspective acceleration at the end.")]
+        public float l2DepthRatio = 3f;
+        [Tooltip("Metres walked (same speed signal as the near road) for one full pass of the MID row.")]
+        public float l2MidPassDistance = 14f;
+        [Tooltip("Metres walked for one full pass of the NEAR row (shorter = faster = more parallax).")]
+        public float l2NearPassDistance = 9f;
+        [Tooltip("Fraction of a pass used to fade a recycled copy in / out.")]
+        [Range(0.02f, 0.45f)] public float l2FadeIn = 0.18f;
+        [Range(0.02f, 0.45f)] public float l2FadeOut = 0.22f;
+        [Tooltip("Speed used when there is no near-road layer: metres of travel per m/s of walk speed.")]
+        public float l2TravelPerMeter = 0.55f;
+        public float l2Acceleration = 3.5f;
+
         [Header("Feel")]
         public float headBobPx = 8f;
         public float headBobSpeed = 9.5f;
@@ -37,6 +61,7 @@ namespace Witcher.Visuals
         FirstPersonController _mover;
         float _bobPhase;
         float _part01; // 0 closed … 1 fully parted — driven by walk speed
+        float _l2Speed; // smoothed travel speed (m/s) when no near road exists
 
         struct SideRow
         {
@@ -46,6 +71,14 @@ namespace Witcher.Visuals
             public RawImage rightImg;
             public float depth;     // 0 far … 1 near — near parts faster/more
             public float partMul;
+            // second copy of the same row, half a pass apart, for seamless recycling
+            public RectTransform leftB;
+            public RectTransform rightB;
+            public RawImage leftImgB;
+            public RawImage rightImgB;
+            public float passDistance;
+            public float phase;     // 0..1 progress of copy A through its pass
+            public float baseY;
         }
 
         void Awake()
@@ -135,8 +168,8 @@ namespace Witcher.Visuals
             if (sides != null)
             {
                 // Fewer rows = fewer overlapping side trees
-                list.Add(MakeSideRow("L2_Mid", _bobRoot, sides, depth: 0.45f, partMul: 0.75f));
-                list.Add(MakeSideRow("L2_Near", _bobRoot, sides, depth: 0.9f, partMul: 1.05f));
+                list.Add(MakeSideRow("L2_Mid", _bobRoot, sides, depth: 0.45f, partMul: 0.75f, passDistance: l2MidPassDistance, phase: 0.22f));
+                list.Add(MakeSideRow("L2_Near", _bobRoot, sides, depth: 0.9f, partMul: 1.05f, passDistance: l2NearPassDistance, phase: 0.05f));
             }
             _rows = list.ToArray();
 
@@ -155,7 +188,8 @@ namespace Witcher.Visuals
             }
 
             BuildSwordUi(ui.transform);
-            ApplyPart(0f);
+            if (l2PassingMotion) ApplyPassing(0f, false, 0f);
+            else ApplyPart(0f);
         }
 
         void LateUpdate()
@@ -185,7 +219,8 @@ namespace Witcher.Visuals
                 _vistaRt.anchoredPosition = _vistaBase;
             }
 
-            ApplyPart(_part01);
+            if (l2PassingMotion) ApplyPassing(Time.deltaTime, moving, speed);
+            else ApplyPart(_part01);
 
             if (_swordRt != null)
             {
@@ -230,25 +265,102 @@ namespace Witcher.Visuals
             }
         }
 
-        SideRow MakeSideRow(string name, Transform parent, Texture2D tex, float depth, float partMul)
+        /// <summary>
+        /// Walk-driven passing: every row has two copies half a pass apart. Each copy travels
+        /// from "far" (dense, near the centre, small) to "near" (pushed out past the screen edge,
+        /// large) with a 1/z perspective curve, fading in at the start and out at the end, so the
+        /// loop is seamless. Progress = metres walked / pass distance, using the same smoothed
+        /// speed as the near-road layer, so both layers stop and start together.
+        /// </summary>
+        void ApplyPassing(float dt, bool moving, float walkSpeed)
         {
+            float travel;
+            if (_nearRoad != null && _nearRoad.isActiveAndEnabled)
+            {
+                travel = _nearRoad.CurrentSpeed;
+                _l2Speed = travel;
+            }
+            else
+            {
+                float target = moving ? walkSpeed * l2TravelPerMeter : 0f;
+                float k = 1f - Mathf.Exp(-Mathf.Max(0.01f, l2Acceleration) * dt);
+                _l2Speed = Mathf.Lerp(_l2Speed, target, k);
+                if (target <= 0f && _l2Speed < 0.002f) _l2Speed = 0f;
+                travel = _l2Speed;
+            }
+
+            if (_rows == null) return;
+            for (int i = 0; i < _rows.Length; i++)
+            {
+                var row = _rows[i];
+                if (dt > 0f && travel > 0f)
+                    row.phase = Mathf.Repeat(row.phase + travel * dt / Mathf.Max(0.5f, row.passDistance), 1f);
+                PlaceCopy(row, row.left, row.right, row.leftImg, row.rightImg, row.phase);
+                PlaceCopy(row, row.leftB, row.rightB, row.leftImgB, row.rightImgB, Mathf.Repeat(row.phase + 0.5f, 1f));
+                _rows[i] = row;
+            }
+        }
+
+        void PlaceCopy(SideRow row, RectTransform l, RectTransform r, RawImage li, RawImage ri, float p)
+        {
+            // depth goes linearly from zFar (=ratio) to zNear (=1) => screen offset ~ 1/z accelerates at the end
+            float ratio = Mathf.Max(1.05f, l2DepthRatio);
+            float z = Mathf.Lerp(ratio, 1f, p);
+            float persp = (ratio / z - 1f) / (ratio - 1f); // 0 .. 1, perspective-curved
+
+            float x = Mathf.Lerp(l2StartPx, maxPartPx * row.partMul, persp);
+            float s = l2BaseScale * (1f + l2Grow * (0.35f + 0.65f * row.depth) * persp);
+            float alpha = Mathf.SmoothStep(0f, 1f, p / l2FadeIn)
+                        * (1f - Mathf.SmoothStep(0f, 1f, (p - (1f - l2FadeOut)) / l2FadeOut));
+            var scale = new Vector3(s, s * Mathf.Max(0.1f, l2HeightScale), 1f);
+
+            if (l != null) { l.anchoredPosition = new Vector2(-x, row.baseY); l.localScale = scale; }
+            if (r != null) { r.anchoredPosition = new Vector2(x, row.baseY); r.localScale = scale; }
+            var c = new Color(1f, 1f, 1f, alpha);
+            if (li != null) { li.color = c; li.enabled = alpha > 0.003f; }
+            if (ri != null) { ri.color = c; ri.enabled = alpha > 0.003f; }
+        }
+
+        SideRow MakeSideRow(string name, Transform parent, Texture2D tex, float depth, float partMul,
+                            float passDistance, float phase)
+        {
+            var row = new SideRow { depth = depth, partMul = partMul, passDistance = passDistance, phase = phase };
+            if (l2PassingMotion)
+            {
+                // copy B first so copy A (the one that starts nearer) draws on top initially
+                var lb = MakeHalf(name + "_L_B", parent, tex, leftHalf: true);
+                var rb = MakeHalf(name + "_R_B", parent, tex, leftHalf: false);
+                PrepSide(lb.rectTransform); PrepSide(rb.rectTransform);
+                row.leftB = lb.rectTransform; row.rightB = rb.rectTransform;
+                row.leftImgB = lb; row.rightImgB = rb;
+            }
             var leftImg = MakeHalf(name + "_L", parent, tex, leftHalf: true);
             var rightImg = MakeHalf(name + "_R", parent, tex, leftHalf: false);
-            // Keep full tree tips/bases inside frame (less crop)
-            // Closer to player — larger side pines
-            Overscan(leftImg.rectTransform, 48f);
-            Overscan(rightImg.rectTransform, 48f);
-            leftImg.rectTransform.localScale = new Vector3(1.18f, 1.18f, 1f);
-            rightImg.rectTransform.localScale = new Vector3(1.18f, 1.18f, 1f);
-            return new SideRow
+            if (l2PassingMotion)
             {
-                left = leftImg.rectTransform,
-                right = rightImg.rectTransform,
-                leftImg = leftImg,
-                rightImg = rightImg,
-                depth = depth,
-                partMul = partMul
-            };
+                PrepSide(leftImg.rectTransform); PrepSide(rightImg.rectTransform);
+            }
+            else
+            {
+                // Keep full tree tips/bases inside frame (less crop)
+                Overscan(leftImg.rectTransform, 48f);
+                Overscan(rightImg.rectTransform, 48f);
+                leftImg.rectTransform.localScale = new Vector3(1.18f, 1.18f, 1f);
+                rightImg.rectTransform.localScale = new Vector3(1.18f, 1.18f, 1f);
+            }
+            row.left = leftImg.rectTransform;
+            row.right = rightImg.rectTransform;
+            row.leftImg = leftImg;
+            row.rightImg = rightImg;
+            row.baseY = leftImg.rectTransform.anchoredPosition.y;
+            return row;
+        }
+
+        static void PrepSide(RectTransform rt)
+        {
+            // pivot on the bottom edge so extra height / growth goes UP (trunks stay planted)
+            rt.pivot = new Vector2(0.5f, 0f);
+            Overscan(rt, 48f);
         }
 
         void BuildSwordUi(Transform parent)
