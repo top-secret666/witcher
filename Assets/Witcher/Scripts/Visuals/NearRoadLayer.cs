@@ -30,9 +30,9 @@ namespace Witcher.Visuals
         public float cameraHeight = 0.8f;
         public float focal = 1f;
         [Tooltip("World width covered by the road texture (dirt + grassy verges), metres.")]
-        public float roadWorldWidth = 4.2f;
+        public float roadWorldWidth = 6.4f;
         [Tooltip("World length of one vertical repeat of the road texture, metres.")]
-        public float tileLength = 13.3f;
+        public float tileLength = 18.4f;
         [Tooltip("Road centre at the bottom of the screen (0..1 of width).")]
         [Range(0f, 1f)] public float nearCenterX = 0.5f;
         [Tooltip("Road centre at the far end, lined up with the painted path in the vista.")]
@@ -58,19 +58,35 @@ namespace Witcher.Visuals
         [Tooltip("Extra gap between the road texture's dirt edge and row 0 (m). 0 = trees stand right at the edge.")]
         public float sideMin = 0f;
         [Tooltip("Where the dirt ends inside the road texture, as a fraction of its half width.")]
-        [Range(0f, 1f)] public float dirtEdge = 0.62f;
+        [Range(0f, 1f)] public float dirtEdge = 0.42f;
         [Tooltip("Lateral distance between rows (m).")]
         public float rowSpacing = 0.9f;
         [Tooltip("Random lateral jitter inside a row (m).")]
         public float rowJitter = 0.45f;
-        public float heightMin = 2.0f;
-        public float heightMax = 3.0f;
-        [Tooltip("Soft cap on a pine's on-screen height (fraction of screen height) so close trees stay in the bottom area and never cover the castle.")]
-        [Range(0.1f, 2f)] public float maxScreenHeight = 0.5f;
+        [Tooltip("Smallest world height of a near pine (m).")]
+        public float heightMin = 1.4f;
+        [Tooltip("Largest world height of a near pine (m).")]
+        public float heightMax = 4.2f;
+        [Tooltip(">1 = more small trees with a few big ones, <1 = mostly big trees.")]
+        [Range(0.3f, 3f)] public float sizeSkew = 1.3f;
+        [Tooltip("Chance that a pine is an extra-tall 'giant'.")]
+        [Range(0f, 1f)] public float giantChance = 0.15f;
+        [Tooltip("Height multiplier for giant pines.")]
+        public float giantScale = 1.35f;
+        [Tooltip("Soft cap on the on-screen height of the TALLEST pines (fraction of screen height); smaller pines get a proportionally lower cap so close trees still differ in size and stay off the castle.")]
+        [Range(0.1f, 2f)] public float maxScreenHeight = 0.55f;
+        [Tooltip("On-screen cap of the smallest pine, relative to maxScreenHeight.")]
+        [Range(0.1f, 1f)] public float minCapFraction = 0.45f;
+        [Tooltip("Height cap multiplier for pines in the middle of the screen (keeps the castle hill / painted path visible).")]
+        [Range(0.1f, 1f)] public float centerCapFraction = 0.5f;
+        [Tooltip("Within this distance from the screen centre (fraction of width) the centre cap applies fully...")]
+        [Range(0f, 0.5f)] public float clearZoneInner = 0.12f;
+        [Tooltip("...and beyond this distance pines get the full cap.")]
+        [Range(0f, 0.5f)] public float clearZoneOuter = 0.4f;
         [Tooltip("Each row further out is this much smaller (fraction).")]
-        [Range(0f, 0.5f)] public float rowShrink = 0.1f;
+        [Range(0f, 0.5f)] public float rowShrink = 0.08f;
         [Tooltip("Colour multiplier for the near pines (lower = darker).")]
-        [Range(0f, 1f)] public float pineTint = 0.72f;
+        [Range(0f, 1f)] public float pineTint = 0.55f;
         [Tooltip("Each row further out is this much lighter.")]
         [Range(0f, 0.3f)] public float rowLighten = 0.08f;
         [Tooltip("Random brightness variation per tree.")]
@@ -96,6 +112,7 @@ namespace Witcher.Visuals
             public float side;
             public float tint;
             public float sortKey;
+            public float size01;  // 0 smallest .. 1 tallest (drives the per-tree screen cap)
         }
 
         RectTransform _rect;
@@ -209,7 +226,11 @@ namespace Witcher.Visuals
             float edge = roadWorldWidth * 0.5f * dirtEdge + sideMin;
             p.x = p.side * (edge + p.row * rowSpacing + (float)_rng.NextDouble() * rowJitter);
             float shrink = Mathf.Max(0.2f, 1f - rowShrink * p.row);
-            p.height = Mathf.Lerp(heightMin, heightMax, (float)_rng.NextDouble()) * shrink;
+            float r01 = Mathf.Pow((float)_rng.NextDouble(), Mathf.Max(0.05f, sizeSkew));
+            if (_rng.NextDouble() < giantChance) r01 = Mathf.Min(1f, r01 + 0.5f);
+            p.size01 = r01;
+            p.height = Mathf.Lerp(heightMin, heightMax, r01) * shrink;
+            if (r01 >= 0.999f || _rng.NextDouble() < giantChance * 0.5f) p.height *= Mathf.Max(1f, giantScale);
             p.tint = Mathf.Clamp01(pineTint * (1f + rowLighten * p.row) + ((float)_rng.NextDouble() * 2f - 1f) * tintJitter);
             Texture2D t = null;
             for (int k = 0; k < _pineTex.Length && t == null; k++)
@@ -370,12 +391,15 @@ namespace Witcher.Visuals
 
                 float yb = horizon - cameraHeight * focal / z;           // base height (fraction from bottom)
                 float hFrac = p.height * focal / z;                      // tree height in screen heights
-                float cap = Mathf.Max(0.05f, maxScreenHeight);
-                hFrac = cap * (float)System.Math.Tanh(hFrac / cap);      // soft cap: close trees stay low
+                float xPx = (CenterX(Mathf.Max(0f, yb)) + (p.x * focal / z) / aspect) * size.x;
+                float dxc = Mathf.Abs(xPx / size.x - 0.5f);
+                float clear = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(clearZoneInner, Mathf.Max(clearZoneInner + 0.001f, clearZoneOuter), dxc));
+                float cap = maxScreenHeight * Mathf.Lerp(minCapFraction, 1f, p.size01) * Mathf.Lerp(centerCapFraction, 1f, clear);
+                cap = Mathf.Max(0.05f, cap);
+                hFrac = cap * (float)System.Math.Tanh(hFrac / cap);      // soft cap: close trees stay low, centre stays open
                 float alpha = Mathf.Clamp01((nearClip + spanSafe - z) / Mathf.Max(0.01f, emergeLength));
                 float hPx = hFrac * size.y;
                 float wPx = p.tex != null ? hPx * p.tex.width / (float)p.tex.height : hPx * 0.4f;
-                float xPx = (CenterX(Mathf.Max(0f, yb)) + (p.x * focal / z) / aspect) * size.x;
 
                 bool visible = p.tex != null && alpha > 0.003f && hPx > 1.5f
                                && xPx + wPx * 0.5f > 0f && xPx - wPx * 0.5f < size.x
