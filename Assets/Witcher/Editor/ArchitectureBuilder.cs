@@ -36,10 +36,6 @@ namespace Witcher.EditorTools
         static readonly Color ColBark = new Color(0.16f, 0.1f, 0.07f);
         static readonly Color ColFoliage = new Color(0.08f, 0.16f, 0.1f);
         static readonly Color ColGate = new Color(0.08f, 0.06f, 0.07f);
-        static readonly Color ColBlade = new Color(0.75f, 0.95f, 1f);
-        static readonly Color ColHilt = new Color(0.35f, 0.22f, 0.12f);
-        static readonly Color ColMetal = new Color(0.7f, 0.7f, 0.75f);
-        static readonly Color ColMoon = new Color(1f, 0.95f, 0.75f);
 
         [MenuItem("Witcher/Architecture/1. Generate Materials + Profiles + Prefabs")]
         public static void GenerateAssets()
@@ -317,10 +313,6 @@ namespace Witcher.EditorTools
             SaveMat("M_Bark", ColBark);
             SaveMat("M_Foliage", ColFoliage);
             SaveMat("M_Gate", ColGate);
-            SaveMat("M_Blade", ColBlade, emissive: new Color(0.4f, 1.4f, 1.8f));
-            SaveMat("M_Hilt", ColHilt);
-            SaveMat("M_Metal", ColMetal);
-            SaveMat("M_Moon", ColMoon, emissive: new Color(2f, 1.8f, 1.2f));
         }
 
         static Material SaveMat(string name, Color color, Color? emissive = null)
@@ -453,14 +445,6 @@ namespace Witcher.EditorTools
             var atm = new GameObject("PF_Atmosphere");
             atm.AddComponent<DarkFantasyAtmosphere>();
             SavePrefab(atm, PrefabSystems + "/PF_Atmosphere.prefab");
-
-            // Moon disc
-            var moon = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            moon.name = "PF_Moon";
-            Object.DestroyImmediate(moon.GetComponent<Collider>());
-            moon.GetComponent<MeshRenderer>().sharedMaterial = LoadMat("M_Moon");
-            moon.AddComponent<MoonDisc>();
-            SavePrefab(moon, PrefabSystems + "/PF_Moon.prefab");
 
             // Player prefab
             CreatePlayerPrefab();

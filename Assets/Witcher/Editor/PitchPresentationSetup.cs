@@ -131,7 +131,7 @@ namespace Witcher.EditorTools
             SetMatMap("M_Foliage", $"{TexPath}/T_Hedge.png", new Vector2(2f, 2f));
 
             var skyMat = AssetDatabase.LoadAssetAtPath<Material>($"{MatPath}/M_Sky.mat");
-            var skyTex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{TexPath}/T_Sky_Dusk.png");
+            var skyTex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{TexPath}/T_Sky_Ash.png");
             if (skyMat != null && skyTex != null)
             {
                 if (skyMat.HasProperty("_BaseMap"))
@@ -168,10 +168,8 @@ namespace Witcher.EditorTools
 
         static void ApplySkyDusk()
         {
-            ConfigureSpriteOrTex($"{TexPath}/T_Sky_Dusk.png", 1024, false);
+            ConfigureSpriteOrTex($"{TexPath}/T_Sky_Ash.png", 1024, false);
             ConfigureSpriteOrTex($"{SpritePath}/T_Sword_Pixel.png", 512, true);
-            ConfigureSpriteOrTex($"{SpritePath}/T_Pine_Billboard.png", 256, true);
-            ConfigureSpriteOrTex($"{SpritePath}/T_Roach.png", 512, true);
             ConfigureSpriteOrTex($"{TexPath}/T_Stone_Grey.png", 128, false);
             ConfigureSpriteOrTex($"{TexPath}/T_Path_Dark.png", 128, false);
         }

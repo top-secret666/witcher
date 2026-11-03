@@ -132,9 +132,7 @@ namespace Witcher.EditorTools
 
             foreach (var f in new[]
                      {
-                         "T_World_Vista.png", "T_L1_SkyMountains.png", "T_L2_CastleMid.png",
-                         "T_L2_DenseForest.png", "T_Forest_Mid.png", "T_L3_NearPines.png",
-                         "T_Sword_Pixel.png", "T_Sky_NightMoon.png"
+                         "T_World_Vista.png", "T_L3_NearPines.png", "T_Sword_Pixel.png"
                      })
             {
                 var src = $"{SpritePath}/{f}";
@@ -143,6 +141,18 @@ namespace Witcher.EditorTools
                 if (AssetDatabase.LoadAssetAtPath<Object>(dst) != null)
                     AssetDatabase.DeleteAsset(dst);
                 AssetDatabase.CopyAsset(src, dst);
+            }
+
+            // Drop leftover pitch resources from older layer experiments
+            foreach (var stale in new[]
+                     {
+                         "T_L1_SkyMountains.png", "T_L2_CastleMid.png", "T_L2_DenseForest.png",
+                         "T_Forest_Mid.png", "T_Sky_NightMoon.png"
+                     })
+            {
+                var stalePath = $"{ResPath}/{stale}";
+                if (AssetDatabase.LoadAssetAtPath<Object>(stalePath) != null)
+                    AssetDatabase.DeleteAsset(stalePath);
             }
             AssetDatabase.Refresh();
         }

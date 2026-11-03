@@ -23,9 +23,9 @@ namespace Witcher.EditorTools
         public static void ApplyAll()
         {
             EnsureFolders();
-            if (LoadTex("T_Stone_Cream") == null && LoadTex("T_Sky_Day") == null)
+            if (LoadTex("T_Stone_Grey") == null && LoadTex("T_Sky_Ash") == null)
             {
-                EditorUtility.DisplayDialog("Witcher", "В Art/Textures нет T_Stone_Cream / T_Sky_Day.", "OK");
+                EditorUtility.DisplayDialog("Witcher", "В Art/Textures нет T_Stone_Grey / T_Sky_Ash.", "OK");
                 return;
             }
 
@@ -75,7 +75,7 @@ namespace Witcher.EditorTools
         {
             string[] names =
             {
-                "T_Sky_Day", "T_Stone_Cream", "T_Roof_Red", "T_Cobble", "T_Hedge", "T_Carpet_Red"
+                "T_Sky_Ash", "T_Stone_Grey", "T_Roof_Red", "T_Path_Dark", "T_Hedge"
             };
 
             foreach (var name in names)
@@ -89,10 +89,8 @@ namespace Witcher.EditorTools
                     importer.textureType = TextureImporterType.Default;
                     importer.sRGBTexture = true;
                     importer.mipmapEnabled = true;
-                    importer.filterMode = name == "T_Sky_Day" ? FilterMode.Bilinear : FilterMode.Bilinear;
-                    importer.wrapMode = TextureWrapMode.Repeat;
-                    if (name == "T_Sky_Day")
-                        importer.wrapMode = TextureWrapMode.Clamp;
+                    importer.filterMode = FilterMode.Bilinear;
+                    importer.wrapMode = name == "T_Sky_Ash" ? TextureWrapMode.Clamp : TextureWrapMode.Repeat;
                     importer.SaveAndReimport();
                 }
             }
@@ -160,15 +158,14 @@ namespace Witcher.EditorTools
 
         static void AssignTexturesToMaterials()
         {
-            SetBaseMap(EnsureLit("M_Stone", new Color(0.9f, 0.85f, 0.75f)), LoadTex("T_Stone_Cream"), new Vector2(2f, 2f));
+            SetBaseMap(EnsureLit("M_Stone", new Color(0.9f, 0.85f, 0.75f)), LoadTex("T_Stone_Grey"), new Vector2(2f, 2f));
             SetBaseMap(EnsureLit("M_Roof", new Color(0.6f, 0.15f, 0.15f)), LoadTex("T_Roof_Red"), new Vector2(2f, 2f));
-            SetBaseMap(EnsureLit("M_Path", new Color(0.5f, 0.4f, 0.35f)), LoadTex("T_Cobble"), new Vector2(4f, 8f));
-            SetBaseMap(EnsureLit("M_Ground", new Color(0.35f, 0.45f, 0.3f)), LoadTex("T_Cobble"), new Vector2(8f, 8f));
+            SetBaseMap(EnsureLit("M_Path", new Color(0.5f, 0.4f, 0.35f)), LoadTex("T_Path_Dark"), new Vector2(4f, 8f));
+            SetBaseMap(EnsureLit("M_Ground", new Color(0.35f, 0.45f, 0.3f)), LoadTex("T_Path_Dark"), new Vector2(8f, 8f));
             SetBaseMap(EnsureLit("M_Foliage", new Color(0.2f, 0.5f, 0.2f)), LoadTex("T_Hedge"), new Vector2(2f, 2f));
-            SetBaseMap(EnsureLit("M_Carpet", new Color(0.6f, 0.1f, 0.1f)), LoadTex("T_Carpet_Red"), new Vector2(1f, 3f));
 
             var skyMat = EnsureUnlit("M_Sky");
-            var skyTex = LoadTex("T_Sky_Day");
+            var skyTex = LoadTex("T_Sky_Ash");
             SetBaseMap(skyMat, skyTex, Vector2.one);
             // Unlit sphere: render inside
             skyMat.SetInt("_Cull", (int)CullMode.Front);

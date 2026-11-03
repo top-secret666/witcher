@@ -92,8 +92,7 @@ namespace Witcher.Visuals
             DestroyChild(transform, "PitchPaper");
             DestroyChild(transform, "PitchUI");
 
-            var vistaTex = Resources.Load<Texture2D>("Pitch/T_World_Vista")
-                           ?? Resources.Load<Texture2D>("Pitch/T_L1_SkyMountains");
+            var vistaTex = Resources.Load<Texture2D>("Pitch/T_World_Vista");
             if (vistaTex == null)
             {
                 Debug.LogError("PitchPaperRig: missing Pitch/T_World_Vista");
@@ -101,9 +100,7 @@ namespace Witcher.Visuals
             }
             vistaTex.filterMode = FilterMode.Point;
 
-            var sides = Resources.Load<Texture2D>("Pitch/T_L3_NearPines")
-                        ?? Resources.Load<Texture2D>("Pitch/T_Forest_Mid")
-                        ?? Resources.Load<Texture2D>("Pitch/T_L2_DenseForest");
+            var sides = Resources.Load<Texture2D>("Pitch/T_L3_NearPines");
             if (sides != null) sides.filterMode = FilterMode.Point;
 
             var ui = new GameObject("PitchUI");
