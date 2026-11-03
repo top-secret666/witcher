@@ -26,8 +26,8 @@ namespace Witcher.Visuals
 
         [Header("Road perspective")]
         [Tooltip("Height of the road's vanishing line, as a fraction of the screen height from the bottom.")]
-        [Range(0.15f, 0.7f)] public float horizon = 0.38f;
-        public float cameraHeight = 1.6f;
+        [Range(0.05f, 0.7f)] public float horizon = 0.16f;
+        public float cameraHeight = 0.8f;
         public float focal = 1f;
         [Tooltip("World width covered by the road texture (dirt + grassy verges), metres.")]
         public float roadWorldWidth = 4.2f;
@@ -38,25 +38,25 @@ namespace Witcher.Visuals
         [Tooltip("Road centre at the far end, lined up with the painted path in the vista.")]
         [Range(0f, 1f)] public float farCenterX = 0.545f;
         [Tooltip("Road starts fading out at this distance (m)...")]
-        public float fadeStart = 16f;
+        public float fadeStart = 14f;
         [Tooltip("...and is fully faded at this distance (m), so it merges into the painted path.")]
-        public float fadeEnd = 30f;
+        public float fadeEnd = 26f;
         [Tooltip("Horizontal resolution of the generated road image (pixel-art chunkiness).")]
         [Range(120, 960)] public int roadPixelWidth = 400;
 
         [Header("Near pines")]
-        public int pineCount = 10;
+        public int pineCount = 8;
         [Tooltip("Depth range the pines cycle through (m). Larger = sparser.")]
-        public float span = 36f;
+        public float span = 18f;
         [Tooltip("Pines recycle to the far end once closer than this (m).")]
-        public float nearClip = 1.2f;
+        public float nearClip = 0.8f;
         [Tooltip("Distance over which a new pine fades in at the far end (m).")]
-        public float emergeLength = 7f;
+        public float emergeLength = 5f;
         [Tooltip("Gap between the road edge and the pines (m).")]
-        public float sideMin = 1.8f;
-        public float sideMax = 4f;
-        public float heightMin = 5f;
-        public float heightMax = 7f;
+        public float sideMin = 2.6f;
+        public float sideMax = 4.6f;
+        public float heightMin = 2.4f;
+        public float heightMax = 3.4f;
         [Tooltip("Colour multiplier for the near pines (lower = darker).")]
         [Range(0f, 1f)] public float pineTint = 0.78f;
         public int seed = 5;
