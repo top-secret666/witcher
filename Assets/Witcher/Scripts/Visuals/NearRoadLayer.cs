@@ -43,6 +43,12 @@ namespace Witcher.Visuals
         public float fadeEnd = 26f;
         [Tooltip("Horizontal resolution of the generated road image (pixel-art chunkiness).")]
         [Range(120, 1920)] public int roadPixelWidth = 960;
+        [Tooltip("Draw the road as a GPU perspective mesh (smooth sub-pixel scrolling, mipmaps + trilinear + anisotropic filtering; no shimmer). Off = old CPU-rendered image.")]
+        public bool gpuRoad = true;
+        [Tooltip("Horizontal strips of the GPU road mesh (more = more exact perspective).")]
+        [Range(16, 400)] public int roadMeshRows = 160;
+        [Tooltip("Anisotropic filtering level for the road texture (GPU road).")]
+        [Range(0, 16)] public int roadAniso = 8;
         [Tooltip("Bilinear filtering of the generated road image (smoother, less pixelated). Off = hard pixels.")]
         public bool smoothRoad = true;
 
@@ -172,6 +178,10 @@ namespace Witcher.Visuals
 
         RectTransform _rect;
         RawImage _roadImg;
+        NearRoadMesh _roadMesh;
+        Texture2D _roadSrcTex;
+        float _meshPhase = -1f, _meshCam = -1f;
+        Vector2 _meshSize;
         Texture2D _roadTex;
         Color32[] _src;
         int _srcW, _srcH;
@@ -208,13 +218,38 @@ namespace Witcher.Visuals
             _rng = new System.Random(seed);
 
             var road = Resources.Load<Texture2D>(RoadPath);
+            _roadSrcTex = road;
             if (road == null)
             {
                 Debug.LogWarning("NearRoadLayer: missing Resources/" + RoadPath);
             }
+            else if (gpuRoad)
+            {
+                // GPU path: let the sampler do the work (mips from the importer, trilinear, aniso)
+                road.wrapModeU = TextureWrapMode.Clamp;
+                road.wrapModeV = TextureWrapMode.Repeat;
+                road.filterMode = road.mipmapCount > 1 ? FilterMode.Trilinear : FilterMode.Bilinear;
+                road.anisoLevel = roadAniso;
+            }
             else
             {
                 _src = ReadPixelsSafe(road, out _srcW, out _srcH);
+            }
+
+            if (gpuRoad && road != null)
+            {
+                var meshGo = new GameObject("RoadMesh", typeof(RectTransform));
+                meshGo.transform.SetParent(transform, false);
+                var mrt = meshGo.GetComponent<RectTransform>();
+                mrt.anchorMin = Vector2.zero;
+                mrt.anchorMax = Vector2.one;
+                mrt.offsetMin = Vector2.zero;
+                mrt.offsetMax = Vector2.zero;
+                _roadMesh = meshGo.AddComponent<NearRoadMesh>();
+                _roadMesh.raycastTarget = false;
+                _roadMesh.owner = this;
+                _roadMesh.texture = road;
+                _roadMesh.color = Color.white;
             }
 
             var roadGo = new GameObject("Road", typeof(RectTransform));
@@ -226,7 +261,7 @@ namespace Witcher.Visuals
             _roadImg = roadGo.AddComponent<RawImage>();
             _roadImg.raycastTarget = false;
             _roadImg.color = Color.white;
-            _roadImg.enabled = _src != null;
+            _roadImg.enabled = _src != null && _roadMesh == null;
 
             _pineTex = new Texture2D[PinePaths.Length];
             int found = 0;
@@ -420,17 +455,80 @@ namespace Witcher.Visuals
                 _dirty = true;
             }
 
-            if (size != _builtSize || !Mathf.Approximately(_builtHorizon, horizon) || _uIdx == null
-                || Mathf.Abs(_builtCam - CamEff) > 0.0015f)
-                RebuildTables(size);
-
-            if (_dirty)
+            if (_roadMesh != null)
             {
-                DrawRoad();
+                // GPU road: just rebuild the (tiny) strip mesh when something moved
+                if (!Mathf.Approximately(_meshPhase, _roadPhase) || !Mathf.Approximately(_meshCam, CamEff) || _meshSize != size)
+                {
+                    _meshPhase = _roadPhase;
+                    _meshCam = CamEff;
+                    _meshSize = size;
+                    _roadMesh.SetVerticesDirty();
+                }
                 _dirty = false;
+            }
+            else
+            {
+                if (size != _builtSize || !Mathf.Approximately(_builtHorizon, horizon) || _uIdx == null
+                    || Mathf.Abs(_builtCam - CamEff) > 0.0015f)
+                    RebuildTables(size);
+
+                if (_dirty)
+                {
+                    DrawRoad();
+                    _dirty = false;
+                }
             }
 
             UpdatePines(size);
+        }
+
+        /// <summary>
+        /// Builds the perspective road as horizontal strips. Each strip edge is a row of constant depth z,
+        /// so u is linear across it; v = (z + travelled) / tileLength is continuous (no pixel snapping), and the
+        /// GPU samples the texture with mipmaps/trilinear/aniso, which removes the shimmer while walking.
+        /// </summary>
+        internal void FillRoadMesh(UnityEngine.UI.VertexHelper vh, Rect rect, Color32 col)
+        {
+            vh.Clear();
+            if (_roadSrcTex == null || rect.width < 2f || rect.height < 2f) return;
+            float aspect = rect.width / rect.height;
+            float cam = CamEff;
+            float camRatio = cam / Mathf.Max(0.01f, cameraHeight);
+            float zEnd = fadeEnd * camRatio + 0.5f;                       // nothing visible beyond this
+            float yTop = Mathf.Clamp(horizon - cam * focal / zEnd, 0f, horizon);
+            int rows = Mathf.Clamp(roadMeshRows, 4, 1000);
+            float halfW = roadWorldWidth * 0.5f;
+            float tl = Mathf.Max(0.01f, tileLength);
+            var v = UIVertex.simpleVert;
+            for (int i = 0; i <= rows; i++)
+            {
+                float t = i / (float)rows;
+                // denser rows toward the far end, where depth changes fastest
+                float y = yTop * (1f - (1f - t) * (1f - t));
+                float sy = Mathf.Max(0.0005f, horizon - y);
+                float z = cam * focal / sy;
+                float fade = Mathf.Clamp01((fadeEnd - z / camRatio) / Mathf.Max(0.01f, fadeEnd - fadeStart));
+                float cx = CenterX(y);
+                float dx = (halfW * focal / z) / aspect;
+                float vv = (z + _roadPhase) / tl;
+                byte a = (byte)Mathf.RoundToInt(col.a * fade);
+                var c = new Color32(col.r, col.g, col.b, a);
+                float py = rect.yMin + y * rect.height;
+                v.color = c;
+                v.position = new Vector3(rect.xMin + (cx - dx) * rect.width, py, 0f);
+                v.uv0 = new Vector4(0f, vv, 0f, 0f);
+                vh.AddVert(v);
+                v.position = new Vector3(rect.xMin + (cx + dx) * rect.width, py, 0f);
+                v.uv0 = new Vector4(1f, vv, 0f, 0f);
+                vh.AddVert(v);
+                if (i > 0)
+                {
+                    int b = (i - 1) * 2;
+                    vh.AddTriangle(b, b + 2, b + 3);
+                    vh.AddTriangle(b, b + 3, b + 1);
+                }
+            }
         }
 
         float CenterX(float yFrac)
