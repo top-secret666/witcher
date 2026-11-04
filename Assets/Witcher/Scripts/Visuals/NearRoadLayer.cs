@@ -53,6 +53,8 @@ namespace Witcher.Visuals
         [Range(-1.5f, 1f)] public float roadMipBias = -0.5f;
         [Tooltip("Bilinear filtering of the generated road image (smoother, less pixelated). Off = hard pixels.")]
         public bool smoothRoad = true;
+        [Tooltip("Shade of the near road (darker = matches the shaded near trees; slightly cool for moonlight).")]
+        public Color roadTint = new Color(0.47f, 0.51f, 0.59f, 1f);
 
         [Header("Near pines (dense rows along both road edges)")]
         [Tooltip("Rows of pines on each side of the road (row 0 hugs the road edge).")]
@@ -267,7 +269,7 @@ namespace Witcher.Visuals
                 _roadMesh.raycastTarget = false;
                 _roadMesh.owner = this;
                 _roadMesh.texture = road;
-                _roadMesh.color = Color.white;
+                _roadMesh.color = roadTint;
             }
 
             var roadGo = new GameObject("Road", typeof(RectTransform));
@@ -278,7 +280,7 @@ namespace Witcher.Visuals
             rrt.offsetMax = Vector2.zero;
             _roadImg = roadGo.AddComponent<RawImage>();
             _roadImg.raycastTarget = false;
-            _roadImg.color = Color.white;
+            _roadImg.color = roadTint;
             _roadImg.enabled = _src != null && _roadMesh == null;
             if (_roadMesh == null) roadGo.transform.SetAsFirstSibling();
             if (_src != null && _roadMesh == null)
@@ -475,6 +477,9 @@ namespace Witcher.Visuals
                 _treePhase = Mathf.Repeat(_treePhase + step, Mathf.Max(0.01f, span));
                 _dirty = true;
             }
+
+            if (_roadImg != null) _roadImg.color = roadTint;
+            if (_roadMesh != null && _roadMesh.color != roadTint) _roadMesh.color = roadTint;
 
             if (_roadMesh != null)
             {
