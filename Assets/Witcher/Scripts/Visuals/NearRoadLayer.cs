@@ -122,10 +122,6 @@ namespace Witcher.Visuals
         [Range(0f, 1f)] public float revealThin = 1f;
         [Tooltip("Fraction of the undergrowth removed at full reveal (0 = bushes, boulders, juniper, fern and grass all stay).")]
         [Range(0f, 1f)] public float revealUndergrowthThin = 1f;
-        [Tooltip("The near road starts fading out at this reveal value...")]
-        [Range(0f, 1f)] public float revealRoadFadeStart = 0.6f;
-        [Tooltip("...and is fully gone at this reveal value (bare view of the vista at the top of the hill).")]
-        [Range(0f, 1f)] public float revealRoadFadeEnd = 1f;
         [Tooltip("Trees get this much shorter at full reveal (fraction).")]
         [Range(0f, 0.9f)] public float revealTreeShrink = 0.3f;
 
@@ -184,11 +180,7 @@ namespace Witcher.Visuals
         RawImage _roadImg;
         NearRoadMesh _roadMesh;
         Texture2D _roadSrcTex;
-        float _meshPhase = -1f, _meshCam = -1f, _meshAlpha = -1f;
-
-        /// <summary>Road opacity from the hill-climb reveal (1 = full road, 0 = gone).</summary>
-        float RoadAlpha => 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(revealRoadFadeStart,
-            Mathf.Max(revealRoadFadeStart + 0.001f, revealRoadFadeEnd), Mathf.Clamp01(reveal01)));
+        float _meshPhase = -1f, _meshCam = -1f;
         Vector2 _meshSize;
         Texture2D _roadTex;
         Color32[] _src;
@@ -466,12 +458,8 @@ namespace Witcher.Visuals
             if (_roadMesh != null)
             {
                 // GPU road: just rebuild the (tiny) strip mesh when something moved
-                float ra = RoadAlpha;
-                _roadMesh.enabled = ra > 0.002f;
-                if (!Mathf.Approximately(_meshPhase, _roadPhase) || !Mathf.Approximately(_meshCam, CamEff) || _meshSize != size
-                    || Mathf.Abs(_meshAlpha - ra) > 0.002f)
+                if (!Mathf.Approximately(_meshPhase, _roadPhase) || !Mathf.Approximately(_meshCam, CamEff) || _meshSize != size)
                 {
-                    _meshAlpha = ra;
                     _meshPhase = _roadPhase;
                     _meshCam = CamEff;
                     _meshSize = size;
@@ -489,12 +477,6 @@ namespace Witcher.Visuals
                 {
                     DrawRoad();
                     _dirty = false;
-                }
-                if (_roadImg != null && _src != null)
-                {
-                    float ra = RoadAlpha;
-                    _roadImg.color = new Color(1f, 1f, 1f, ra);
-                    _roadImg.enabled = ra > 0.002f;
                 }
             }
 
@@ -530,7 +512,7 @@ namespace Witcher.Visuals
                 float cx = CenterX(y);
                 float dx = (halfW * focal / z) / aspect;
                 float vv = (z + _roadPhase) / tl;
-                byte a = (byte)Mathf.RoundToInt(col.a * fade * RoadAlpha);
+                byte a = (byte)Mathf.RoundToInt(col.a * fade);
                 var c = new Color32(col.r, col.g, col.b, a);
                 float py = rect.yMin + y * rect.height;
                 v.color = c;
