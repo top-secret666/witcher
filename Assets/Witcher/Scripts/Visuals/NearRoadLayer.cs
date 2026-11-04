@@ -42,7 +42,9 @@ namespace Witcher.Visuals
         [Tooltip("...and is fully faded at this distance (m), so it merges into the painted path.")]
         public float fadeEnd = 26f;
         [Tooltip("Horizontal resolution of the generated road image (pixel-art chunkiness).")]
-        [Range(120, 960)] public int roadPixelWidth = 400;
+        [Range(120, 1920)] public int roadPixelWidth = 960;
+        [Tooltip("Bilinear filtering of the generated road image (smoother, less pixelated). Off = hard pixels.")]
+        public bool smoothRoad = true;
 
         [Header("Near pines (dense rows along both road edges)")]
         [Tooltip("Rows of pines on each side of the road (row 0 hugs the road edge).")]
@@ -311,7 +313,7 @@ namespace Witcher.Visuals
                 if (_roadTex != null) Destroy(_roadTex);
                 _roadTex = new Texture2D(_rtW, _rtH, TextureFormat.RGBA32, false);
                 _roadTex.name = "NearRoad_Runtime";
-                _roadTex.filterMode = FilterMode.Point;
+                _roadTex.filterMode = smoothRoad ? FilterMode.Bilinear : FilterMode.Point;
                 _roadTex.wrapMode = TextureWrapMode.Clamp;
                 _roadImg.texture = _roadTex;
             }
