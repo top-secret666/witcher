@@ -28,6 +28,8 @@ namespace Witcher.Visuals
         public float l2Grow = 0.15f;
         [Tooltip("Sideways offset (px) of a pine row when it appears (far). Ends at maxPartPx x row multiplier.")]
         public float l2StartPx = 100f;
+        [Tooltip("Extra outward spread (px) of the L2 parting pines at all times, incl. the very start, so the centre is more open.")]
+        public float l2StartSpreadPx = 70f;
         [Tooltip("Sideways offset (px) at the end of a pass (x row multiplier). Replaces maxPartPx in passing mode.")]
         public float l2MaxPartPx = 460f;
         [Tooltip("How much closer a pine gets during one pass (zFar / zNear). Higher = stronger perspective acceleration at the end.")]
@@ -57,9 +59,11 @@ namespace Witcher.Visuals
         [Tooltip("L2 pine opacity at full reveal.")]
         [Range(0f, 1f)] public float l2RevealMinAlpha = 1f;
         [Tooltip("At full reveal the L2 pines are pushed this far (px) further out to the screen sides, so they frame the view and the castle is clear.")]
-        public float l2RevealSpreadPx = 150f;
+        public float l2RevealSpreadPx = 200f;
+        [Tooltip("Hard cap (px from screen centre) for the L2 side offset at full reveal, so each side keeps ~30% of its pines visible at the screen edge and never slides fully off-screen.")]
+        public float l2RevealMaxPx = 410f;
         [Tooltip("At full reveal the sideways passing slide is reduced by this fraction, so the pines keep moving but stay at the edges instead of leaving the screen.")]
-        [Range(0f, 1f)] public float l2RevealPassDamp = 0.7f;
+        [Range(0f, 1f)] public float l2RevealPassDamp = 0.85f;
         [Tooltip("Read-only: distance walked so far (m) and current reveal 0..1.")]
         public float walkedDistance;
         [Range(0f, 1f)] public float reveal01;
@@ -338,13 +342,19 @@ namespace Witcher.Visuals
             float z = Mathf.Lerp(ratio, 1f, p);
             float persp = (ratio / z - 1f) / (ratio - 1f); // 0 .. 1, perspective-curved
 
-            float x = Mathf.Lerp(l2StartPx, l2MaxPartPx * row.partMul, persp);
+            float x0 = l2StartPx + l2StartSpreadPx;
+            float x = Mathf.Lerp(x0, l2MaxPartPx * row.partMul + l2StartSpreadPx, persp);
             // hill-climb reveal: spread to the sides and keep a gentler passing slide there
-            x += l2RevealSpreadPx * reveal01 - (x - l2StartPx) * l2RevealPassDamp * reveal01;
-            float s = l2BaseScale * (1f + l2Grow * (0.35f + 0.65f * row.depth) * persp);
+            x += l2RevealSpreadPx * reveal01 - (x - x0) * l2RevealPassDamp * reveal01;
+            if (x > l2RevealMaxPx) x = Mathf.Lerp(x, l2RevealMaxPx, reveal01); // never leave the screen at reveal
+            // the two passing copies converge in size too, so their crossfade is seamless at full reveal
+            float s = l2BaseScale * (1f + l2Grow * (0.35f + 0.65f * row.depth) * persp * (1f - l2RevealPassDamp * reveal01));
             s *= 1f - l2RevealShrink * reveal01;
-            float alpha = Mathf.SmoothStep(0f, 1f, p / l2FadeIn)
-                        * (1f - Mathf.SmoothStep(0f, 1f, (p - (1f - l2FadeOut)) / l2FadeOut));
+            // fades capped at 1/4 of the cycle each: copies are half a cycle apart, so whenever one copy
+            // fades the other is fully opaque -> each side always has one fully visible copy
+            float fin = Mathf.Clamp(l2FadeIn, 0.01f, 0.25f), fout = Mathf.Clamp(l2FadeOut, 0.01f, 0.25f);
+            float alpha = Mathf.SmoothStep(0f, 1f, p / fin)
+                        * (1f - Mathf.SmoothStep(0f, 1f, (p - (1f - fout)) / fout));
             alpha *= Mathf.Lerp(1f, l2RevealMinAlpha, reveal01);
             var scale = new Vector3(s, s * Mathf.Max(0.1f, l2HeightScale), 1f);
             float y = row.baseY - l2RevealDropPx * reveal01;
