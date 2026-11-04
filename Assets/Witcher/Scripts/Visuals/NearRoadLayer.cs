@@ -117,7 +117,9 @@ namespace Witcher.Visuals
         [Tooltip("0 = start of the walk, 1 = top of the hill (view fully open). Driven by PitchPaperRig.revealDistance.")]
         [Range(0f, 1f)] public float reveal01 = 0f;
         [Tooltip("Extra eye height at full reveal (x cameraHeight): road and tree bases drop lower on screen, like looking down from higher up.")]
-        public float revealCameraRise = 1.2f;
+        public float revealCameraRise = 0.3f;
+        [Tooltip("Share of the eye rise applied to the ROAD (0 = the road keeps its full width/framing for the whole reveal; 1 = physically consistent, but the road shrinks into a thin strip far below).")]
+        [Range(0f, 1f)] public float revealRoadRise = 0f;
         [Tooltip("Fraction of the roadside trees removed at full reveal (1 = every tree has faded out by the top of the hill).")]
         [Range(0f, 1f)] public float revealThin = 1f;
         [Tooltip("Fraction of the undergrowth removed at full reveal (0 = bushes, boulders, juniper, fern and grass all stay).")]
@@ -196,6 +198,9 @@ namespace Witcher.Visuals
 
         /// <summary>Eye height after the hill-climb rise.</summary>
         float CamEff => cameraHeight * (1f + Mathf.Max(0f, revealCameraRise) * Mathf.Clamp01(reveal01));
+
+        /// <summary>Eye height used for the road. Kept at cameraHeight by default so the road never shrinks away.</summary>
+        float RoadCam => cameraHeight * (1f + Mathf.Max(0f, revealCameraRise) * Mathf.Clamp01(revealRoadRise) * Mathf.Clamp01(reveal01));
 
         readonly List<Pine> _pines = new List<Pine>();
         readonly List<Pine> _sorted = new List<Pine>();
@@ -458,10 +463,10 @@ namespace Witcher.Visuals
             if (_roadMesh != null)
             {
                 // GPU road: just rebuild the (tiny) strip mesh when something moved
-                if (!Mathf.Approximately(_meshPhase, _roadPhase) || !Mathf.Approximately(_meshCam, CamEff) || _meshSize != size)
+                if (!Mathf.Approximately(_meshPhase, _roadPhase) || !Mathf.Approximately(_meshCam, RoadCam) || _meshSize != size)
                 {
                     _meshPhase = _roadPhase;
-                    _meshCam = CamEff;
+                    _meshCam = RoadCam;
                     _meshSize = size;
                     _roadMesh.SetVerticesDirty();
                 }
@@ -470,7 +475,7 @@ namespace Witcher.Visuals
             else
             {
                 if (size != _builtSize || !Mathf.Approximately(_builtHorizon, horizon) || _uIdx == null
-                    || Mathf.Abs(_builtCam - CamEff) > 0.0015f)
+                    || Mathf.Abs(_builtCam - RoadCam) > 0.0015f)
                     RebuildTables(size);
 
                 if (_dirty)
@@ -493,7 +498,7 @@ namespace Witcher.Visuals
             vh.Clear();
             if (_roadSrcTex == null || rect.width < 2f || rect.height < 2f) return;
             float aspect = rect.width / rect.height;
-            float cam = CamEff;
+            float cam = RoadCam;
             float camRatio = cam / Mathf.Max(0.01f, cameraHeight);
             float zEnd = fadeEnd * camRatio + 0.5f;                       // nothing visible beyond this
             float yTop = Mathf.Clamp(horizon - cam * focal / zEnd, 0f, horizon);
@@ -542,7 +547,7 @@ namespace Witcher.Visuals
         {
             _builtSize = size;
             _builtHorizon = horizon;
-            _builtCam = CamEff;
+            _builtCam = RoadCam;
             float aspect = size.x / size.y;
 
             var rrt = _roadImg.rectTransform;
