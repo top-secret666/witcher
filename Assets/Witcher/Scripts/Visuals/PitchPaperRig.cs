@@ -51,11 +51,15 @@ namespace Witcher.Visuals
         [Tooltip("Metres walked (same travel signal as the road) to reach the fully open view.")]
         public float revealDistance = 40f;
         [Tooltip("How far (px) the L2 pines sink at full reveal.")]
-        public float l2RevealDropPx = 240f;
+        public float l2RevealDropPx = 0f;
         [Tooltip("L2 pines get this much smaller at full reveal.")]
-        [Range(0f, 0.9f)] public float l2RevealShrink = 0.3f;
+        [Range(0f, 0.9f)] public float l2RevealShrink = 0f;
         [Tooltip("L2 pine opacity at full reveal.")]
-        [Range(0f, 1f)] public float l2RevealMinAlpha = 0.2f;
+        [Range(0f, 1f)] public float l2RevealMinAlpha = 1f;
+        [Tooltip("At full reveal the L2 pines are pushed this far (px) further out to the screen sides, so they frame the view and the castle is clear.")]
+        public float l2RevealSpreadPx = 150f;
+        [Tooltip("At full reveal the sideways passing slide is reduced by this fraction, so the pines keep moving but stay at the edges instead of leaving the screen.")]
+        [Range(0f, 1f)] public float l2RevealPassDamp = 0.7f;
         [Tooltip("Read-only: distance walked so far (m) and current reveal 0..1.")]
         public float walkedDistance;
         [Range(0f, 1f)] public float reveal01;
@@ -335,6 +339,8 @@ namespace Witcher.Visuals
             float persp = (ratio / z - 1f) / (ratio - 1f); // 0 .. 1, perspective-curved
 
             float x = Mathf.Lerp(l2StartPx, l2MaxPartPx * row.partMul, persp);
+            // hill-climb reveal: spread to the sides and keep a gentler passing slide there
+            x += l2RevealSpreadPx * reveal01 - (x - l2StartPx) * l2RevealPassDamp * reveal01;
             float s = l2BaseScale * (1f + l2Grow * (0.35f + 0.65f * row.depth) * persp);
             s *= 1f - l2RevealShrink * reveal01;
             float alpha = Mathf.SmoothStep(0f, 1f, p / l2FadeIn)
