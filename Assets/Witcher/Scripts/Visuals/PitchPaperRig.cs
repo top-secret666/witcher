@@ -21,13 +21,15 @@ namespace Witcher.Visuals
         [Tooltip("On: the L2 pines continuously slide outward and grow while walking (like passing trees) and recycle. Off: old one-shot parting.")]
         public bool l2PassingMotion = true;
         [Tooltip("Extra vertical stretch of the L2 pines (taller trees). Scales up from the bottom edge.")]
-        public float l2HeightScale = 1.15f;
+        public float l2HeightScale = 0.9f;
         [Tooltip("Base scale of the L2 pines when they appear (far).")]
-        public float l2BaseScale = 1.0f;
+        public float l2BaseScale = 0.85f;
         [Tooltip("Extra scale gained while passing (near row gets the full amount).")]
-        public float l2Grow = 0.35f;
+        public float l2Grow = 0.15f;
         [Tooltip("Sideways offset (px) of a pine row when it appears (far). Ends at maxPartPx x row multiplier.")]
         public float l2StartPx = 100f;
+        [Tooltip("Sideways offset (px) at the end of a pass (x row multiplier). Replaces maxPartPx in passing mode.")]
+        public float l2MaxPartPx = 460f;
         [Tooltip("How much closer a pine gets during one pass (zFar / zNear). Higher = stronger perspective acceleration at the end.")]
         public float l2DepthRatio = 3f;
         [Tooltip("Metres walked (same speed signal as the near road) for one full pass of the MID row.")]
@@ -308,7 +310,7 @@ namespace Witcher.Visuals
             float z = Mathf.Lerp(ratio, 1f, p);
             float persp = (ratio / z - 1f) / (ratio - 1f); // 0 .. 1, perspective-curved
 
-            float x = Mathf.Lerp(l2StartPx, maxPartPx * row.partMul, persp);
+            float x = Mathf.Lerp(l2StartPx, l2MaxPartPx * row.partMul, persp);
             float s = l2BaseScale * (1f + l2Grow * (0.35f + 0.65f * row.depth) * persp);
             float alpha = Mathf.SmoothStep(0f, 1f, p / l2FadeIn)
                         * (1f - Mathf.SmoothStep(0f, 1f, (p - (1f - l2FadeOut)) / l2FadeOut));
