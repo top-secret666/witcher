@@ -105,6 +105,18 @@ namespace Witcher.Visuals
         [Range(0f, 0.3f)] public float tintJitter = 0.06f;
         public int seed = 5;
 
+        [Header("Hill-climb reveal (set by PitchPaperRig from distance walked)")]
+        [Tooltip("0 = start of the walk, 1 = top of the hill (view fully open). Driven by PitchPaperRig.revealDistance.")]
+        [Range(0f, 1f)] public float reveal01 = 0f;
+        [Tooltip("Extra eye height at full reveal (x cameraHeight): road and tree bases drop lower on screen, like looking down from higher up.")]
+        public float revealCameraRise = 1.2f;
+        [Tooltip("Fraction of the roadside trees removed at full reveal (they fade out gradually).")]
+        [Range(0f, 1f)] public float revealThin = 0.6f;
+        [Tooltip("Fraction of the undergrowth removed at full reveal.")]
+        [Range(0f, 1f)] public float revealUndergrowthThin = 0.25f;
+        [Tooltip("Trees get this much shorter at full reveal (fraction).")]
+        [Range(0f, 0.9f)] public float revealTreeShrink = 0.3f;
+
         [Header("Undergrowth (bushes, juniper, fern, grass, boulders on the verge)")]
         public bool buildUndergrowth = true;
         [Tooltip("Undergrowth pieces per side of the road (pooled).")]
@@ -153,6 +165,7 @@ namespace Witcher.Visuals
             public bool dead;
             public bool under;    // undergrowth piece (no screen cap)
             public int kind;      // undergrowth type index
+            public float thin;    // 0..1 random key: removed when reveal passes it
         }
 
         RectTransform _rect;
@@ -167,6 +180,10 @@ namespace Witcher.Visuals
         int _rtW, _rtH;
         Vector2 _builtSize;
         float _builtHorizon = -1f;
+        float _builtCam = -1f;
+
+        /// <summary>Eye height after the hill-climb rise.</summary>
+        float CamEff => cameraHeight * (1f + Mathf.Max(0f, revealCameraRise) * Mathf.Clamp01(reveal01));
 
         readonly List<Pine> _pines = new List<Pine>();
         readonly List<Pine> _sorted = new List<Pine>();
@@ -311,6 +328,7 @@ namespace Witcher.Visuals
 
         void Randomize(Pine p, int hint)
         {
+            p.thin = (float)_rng.NextDouble();
             if (p.under) { RandomizeUnder(p); return; }
             float edge = roadWorldWidth * 0.5f * dirtEdge + sideMin;
             p.x = p.side * (edge + p.row * rowSpacing + (float)_rng.NextDouble() * rowJitter);
@@ -400,7 +418,8 @@ namespace Witcher.Visuals
                 _dirty = true;
             }
 
-            if (size != _builtSize || !Mathf.Approximately(_builtHorizon, horizon) || _uIdx == null)
+            if (size != _builtSize || !Mathf.Approximately(_builtHorizon, horizon) || _uIdx == null
+                || Mathf.Abs(_builtCam - CamEff) > 0.0015f)
                 RebuildTables(size);
 
             if (_dirty)
@@ -423,6 +442,7 @@ namespace Witcher.Visuals
         {
             _builtSize = size;
             _builtHorizon = horizon;
+            _builtCam = CamEff;
             float aspect = size.x / size.y;
 
             var rrt = _roadImg.rectTransform;
@@ -447,19 +467,20 @@ namespace Witcher.Visuals
             }
 
             int n = _rtW * _rtH;
-            _buf = new Color32[n];
-            _uIdx = new int[n];
-            _rowV = new float[_rtH];
-            _rowFade = new byte[_rtH];
+            if (_buf == null || _buf.Length != n) _buf = new Color32[n];
+            if (_uIdx == null || _uIdx.Length != n) _uIdx = new int[n];
+            if (_rowV == null || _rowV.Length != _rtH) _rowV = new float[_rtH];
+            if (_rowFade == null || _rowFade.Length != _rtH) _rowFade = new byte[_rtH];
+            float cam = _builtCam;
 
             float texPerMeter = _srcH / Mathf.Max(0.01f, tileLength);
             for (int r = 0; r < _rtH; r++)
             {
                 float y = (r + 0.5f) / _rtH * horizon;        // fraction of screen height from bottom
                 float sy = Mathf.Max(0.0005f, horizon - y);   // distance below the vanishing line
-                float z = cameraHeight * focal / sy;          // world depth of this row
+                float z = cam * focal / sy;                   // world depth of this row
                 _rowV[r] = z * texPerMeter;
-                float fade = Mathf.Clamp01((fadeEnd - z) / Mathf.Max(0.01f, fadeEnd - fadeStart));
+                float fade = Mathf.Clamp01((fadeEnd - z * cameraHeight / Mathf.Max(0.01f, cam)) / Mathf.Max(0.01f, fadeEnd - fadeStart));
                 _rowFade[r] = (byte)Mathf.RoundToInt(fade * 255f);
 
                 float cx = CenterX(y);
@@ -519,8 +540,9 @@ namespace Witcher.Visuals
                     Randomize(p, i); // just recycled to the far end - new look
                 p.lastZ = z;
 
-                float yb = horizon - cameraHeight * focal / z;           // base height (fraction from bottom)
-                float hFrac = p.height * focal / z;                      // tree height in screen heights
+                float yb = horizon - CamEff * focal / z;                 // base height (fraction from bottom)
+                float rv = Mathf.Clamp01(reveal01);
+                float hFrac = p.height * (p.under ? 1f : 1f - revealTreeShrink * rv) * focal / z; // height in screen heights
                 float xPx = (CenterX(Mathf.Max(0f, yb)) + (p.x * focal / z) / aspect) * size.x;
                 float dxc = Mathf.Abs(xPx / size.x - 0.5f);
                 float clear = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(clearZoneInner, Mathf.Max(clearZoneInner + 0.001f, clearZoneOuter), dxc));
@@ -531,6 +553,8 @@ namespace Witcher.Visuals
                     hFrac = cap * (float)System.Math.Tanh(hFrac / cap);  // soft cap: close trees stay low, centre stays open
                 }
                 float alpha = Mathf.Clamp01((nearClip + spanSafe - z) / Mathf.Max(0.01f, emergeLength));
+                float thr = rv * (p.under ? revealUndergrowthThin : revealThin);
+                alpha *= Mathf.Clamp01(1f + (p.thin - thr) / 0.08f);    // hill-climb thinning (soft)
                 float hPx = hFrac * size.y;
                 float wPx = p.tex != null ? hPx * p.tex.width / (float)p.tex.height : hPx * 0.4f;
 

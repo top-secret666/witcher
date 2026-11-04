@@ -43,6 +43,21 @@ namespace Witcher.Visuals
         public float l2TravelPerMeter = 0.55f;
         public float l2Acceleration = 3.5f;
 
+        [Header("Hill-climb reveal (walk = climb, view opens up)")]
+        [Tooltip("Gradually open the view while walking: roadside trees thin out and drop, L2 pines sink and fade, so the castle gets clearer.")]
+        public bool revealEnabled = true;
+        [Tooltip("Metres walked (same travel signal as the road) to reach the fully open view.")]
+        public float revealDistance = 40f;
+        [Tooltip("How far (px) the L2 pines sink at full reveal.")]
+        public float l2RevealDropPx = 240f;
+        [Tooltip("L2 pines get this much smaller at full reveal.")]
+        [Range(0f, 0.9f)] public float l2RevealShrink = 0.3f;
+        [Tooltip("L2 pine opacity at full reveal.")]
+        [Range(0f, 1f)] public float l2RevealMinAlpha = 0.2f;
+        [Tooltip("Read-only: distance walked so far (m) and current reveal 0..1.")]
+        public float walkedDistance;
+        [Range(0f, 1f)] public float reveal01;
+
         [Header("Feel")]
         public float headBobPx = 8f;
         public float headBobSpeed = 9.5f;
@@ -291,6 +306,13 @@ namespace Witcher.Visuals
                 travel = _l2Speed;
             }
 
+            // hill-climb reveal: accumulated distance -> smooth 0..1
+            if (dt > 0f && travel > 0f) walkedDistance += travel * dt;
+            reveal01 = revealEnabled
+                ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(walkedDistance / Mathf.Max(0.5f, revealDistance)))
+                : 0f;
+            if (_nearRoad != null) _nearRoad.reveal01 = reveal01;
+
             if (_rows == null) return;
             for (int i = 0; i < _rows.Length; i++)
             {
@@ -312,12 +334,15 @@ namespace Witcher.Visuals
 
             float x = Mathf.Lerp(l2StartPx, l2MaxPartPx * row.partMul, persp);
             float s = l2BaseScale * (1f + l2Grow * (0.35f + 0.65f * row.depth) * persp);
+            s *= 1f - l2RevealShrink * reveal01;
             float alpha = Mathf.SmoothStep(0f, 1f, p / l2FadeIn)
                         * (1f - Mathf.SmoothStep(0f, 1f, (p - (1f - l2FadeOut)) / l2FadeOut));
+            alpha *= Mathf.Lerp(1f, l2RevealMinAlpha, reveal01);
             var scale = new Vector3(s, s * Mathf.Max(0.1f, l2HeightScale), 1f);
+            float y = row.baseY - l2RevealDropPx * reveal01;
 
-            if (l != null) { l.anchoredPosition = new Vector2(-x, row.baseY); l.localScale = scale; }
-            if (r != null) { r.anchoredPosition = new Vector2(x, row.baseY); r.localScale = scale; }
+            if (l != null) { l.anchoredPosition = new Vector2(-x, y); l.localScale = scale; }
+            if (r != null) { r.anchoredPosition = new Vector2(x, y); r.localScale = scale; }
             var c = new Color(1f, 1f, 1f, alpha);
             if (li != null) { li.color = c; li.enabled = alpha > 0.003f; }
             if (ri != null) { ri.color = c; ri.enabled = alpha > 0.003f; }
