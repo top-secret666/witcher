@@ -105,6 +105,25 @@ namespace Witcher.Visuals
         [Range(0f, 0.3f)] public float tintJitter = 0.06f;
         public int seed = 5;
 
+        [Header("Undergrowth (bushes, juniper, fern, grass, boulders on the verge)")]
+        public bool buildUndergrowth = true;
+        [Tooltip("Undergrowth pieces per side of the road (pooled).")]
+        [Range(0, 80)] public int undergrowthPerSide = 32;
+        [Tooltip("Inner edge of the undergrowth band as a fraction of the dirt-edge distance (1 = exactly where the dirt ends).")]
+        [Range(0.3f, 1.5f)] public float undergrowthInner = 0.75f;
+        [Tooltip("Outer edge of the band: metres (layer units) beyond the outermost pine row.")]
+        public float undergrowthOuter = 0.6f;
+        [Tooltip("Height ranges in REAL metres.")]
+        public Vector2 bushHeight = new Vector2(0.6f, 1.2f);
+        public Vector2 juniperHeight = new Vector2(0.8f, 1.5f);
+        public Vector2 fernHeight = new Vector2(0.4f, 0.8f);
+        public Vector2 grassHeight = new Vector2(0.4f, 0.9f);
+        public Vector2 boulderHeight = new Vector2(0.5f, 1.2f);
+        [Tooltip("Relative spawn weights: bush, juniper, fern, grass, boulder.")]
+        public float[] undergrowthWeights = { 1f, 0.8f, 1.2f, 1.5f, 0.6f };
+        [Tooltip("Colour multiplier for the undergrowth (lower = darker).")]
+        [Range(0f, 1f)] public float undergrowthTint = 0.7f;
+
         const string RoadPath = "Pitch/T_L4_Road";
         static readonly string[] PinePaths =
         {
@@ -112,6 +131,10 @@ namespace Witcher.Visuals
             "Pitch/T_L4_NearPine_E", "Pitch/T_L4_NearPine_F"
         };
         const string DeadPath = "Pitch/T_L4_NearPine_G";
+        static readonly string[] UnderPaths =
+        {
+            "Pitch/T_L4_Bush", "Pitch/T_L4_Juniper", "Pitch/T_L4_Fern", "Pitch/T_L4_Grass", "Pitch/T_L4_Boulder"
+        };
 
         sealed class Pine
         {
@@ -128,6 +151,8 @@ namespace Witcher.Visuals
             public float sortKey;
             public float size01;  // 0 smallest .. 1 tallest (drives the per-tree screen cap)
             public bool dead;
+            public bool under;    // undergrowth piece (no screen cap)
+            public int kind;      // undergrowth type index
         }
 
         RectTransform _rect;
@@ -147,6 +172,7 @@ namespace Witcher.Visuals
         readonly List<Pine> _sorted = new List<Pine>();
         Texture2D[] _pineTex;
         Texture2D _deadTex;
+        Texture2D[] _underTex;
         System.Random _rng;
 
         float _speed;
@@ -236,6 +262,43 @@ namespace Witcher.Visuals
                 Debug.LogWarning("NearRoadLayer: no Pitch/T_L4_NearPine_* textures found");
             }
 
+            // undergrowth pool, scattered on the verge between the pine rows
+            _underTex = new Texture2D[UnderPaths.Length];
+            int underFound = 0;
+            for (int i = 0; i < UnderPaths.Length; i++)
+            {
+                _underTex[i] = Resources.Load<Texture2D>(UnderPaths[i]);
+                if (_underTex[i] != null) { _underTex[i].filterMode = SpriteFilter; underFound++; }
+            }
+            if (buildUndergrowth && underFound > 0)
+            {
+                int per = Mathf.Max(1, undergrowthPerSide);
+                int idx = 0;
+                for (int sd = 0; sd < 2; sd++)
+                {
+                    float side = sd == 0 ? -1f : 1f;
+                    for (int k = 0; k < per; k++)
+                    {
+                        var p = new Pine();
+                        var go = new GameObject("Under_" + (sd == 0 ? "L" : "R") + k, typeof(RectTransform));
+                        go.transform.SetParent(transform, false);
+                        p.rt = go.GetComponent<RectTransform>();
+                        p.rt.anchorMin = Vector2.zero;
+                        p.rt.anchorMax = Vector2.zero;
+                        p.rt.pivot = new Vector2(0.5f, 0f);
+                        p.img = go.AddComponent<RawImage>();
+                        p.img.raycastTarget = false;
+                        p.img.enabled = false;
+                        p.under = true;
+                        p.side = side;
+                        p.phase = (k + (float)_rng.NextDouble() * 0.9f + sd * 0.41f) * span / per;
+                        Randomize(p, idx++);
+                        p.lastZ = float.MaxValue;
+                        _pines.Add(p);
+                    }
+                }
+            }
+
             _dirty = true;
         }
 
@@ -248,6 +311,7 @@ namespace Witcher.Visuals
 
         void Randomize(Pine p, int hint)
         {
+            if (p.under) { RandomizeUnder(p); return; }
             float edge = roadWorldWidth * 0.5f * dirtEdge + sideMin;
             p.x = p.side * (edge + p.row * rowSpacing + (float)_rng.NextDouble() * rowJitter);
             float shrink = Mathf.Max(0.2f, 1f - rowShrink * p.row);
@@ -273,6 +337,37 @@ namespace Witcher.Visuals
                 p.height = M(Rand(wideFirHeight.x, wideFirHeight.y)) * shrink; // wide fir: short and broad
             p.img.texture = t;
         }
+
+        void RandomizeUnder(Pine p)
+        {
+            float edge = roadWorldWidth * 0.5f * dirtEdge + sideMin;
+            float outer = edge + Mathf.Max(0, pineRows - 1) * rowSpacing + rowJitter + undergrowthOuter;
+            p.x = p.side * Rand(edge * undergrowthInner, outer);
+
+            float total = 0f;
+            for (int i = 0; i < _underTex.Length; i++)
+                if (_underTex[i] != null) total += Weight(i);
+            float pick = (float)_rng.NextDouble() * Mathf.Max(0.0001f, total);
+            int kind = -1;
+            for (int i = 0; i < _underTex.Length; i++)
+            {
+                if (_underTex[i] == null) continue;
+                kind = i;
+                pick -= Weight(i);
+                if (pick <= 0f) break;
+            }
+            p.kind = kind;
+            p.tex = kind >= 0 ? _underTex[kind] : null;
+            p.img.texture = p.tex;
+            Vector2 hr = kind == 0 ? bushHeight : kind == 1 ? juniperHeight : kind == 2 ? fernHeight
+                       : kind == 3 ? grassHeight : boulderHeight;
+            p.height = M(Rand(hr.x, hr.y));
+            p.size01 = 1f;
+            p.tint = Mathf.Clamp01(undergrowthTint + ((float)_rng.NextDouble() * 2f - 1f) * tintJitter);
+        }
+
+        float Weight(int i) =>
+            undergrowthWeights != null && i < undergrowthWeights.Length ? Mathf.Max(0f, undergrowthWeights[i]) : 1f;
 
         void OnDestroy()
         {
@@ -429,9 +524,12 @@ namespace Witcher.Visuals
                 float xPx = (CenterX(Mathf.Max(0f, yb)) + (p.x * focal / z) / aspect) * size.x;
                 float dxc = Mathf.Abs(xPx / size.x - 0.5f);
                 float clear = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(clearZoneInner, Mathf.Max(clearZoneInner + 0.001f, clearZoneOuter), dxc));
-                float cap = maxScreenHeight * Mathf.Lerp(minCapFraction, 1f, p.size01) * Mathf.Lerp(centerCapFraction, 1f, clear);
-                cap = Mathf.Max(0.05f, cap);
-                hFrac = cap * (float)System.Math.Tanh(hFrac / cap);      // soft cap: close trees stay low, centre stays open
+                if (!p.under)
+                {
+                    float cap = maxScreenHeight * Mathf.Lerp(minCapFraction, 1f, p.size01) * Mathf.Lerp(centerCapFraction, 1f, clear);
+                    cap = Mathf.Max(0.05f, cap);
+                    hFrac = cap * (float)System.Math.Tanh(hFrac / cap);  // soft cap: close trees stay low, centre stays open
+                }
                 float alpha = Mathf.Clamp01((nearClip + spanSafe - z) / Mathf.Max(0.01f, emergeLength));
                 float hPx = hFrac * size.y;
                 float wPx = p.tex != null ? hPx * p.tex.width / (float)p.tex.height : hPx * 0.4f;
