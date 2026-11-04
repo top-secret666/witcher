@@ -26,7 +26,7 @@ namespace Witcher.Visuals
 
         [Header("Road perspective")]
         [Tooltip("Height of the road's vanishing line, as a fraction of the screen height from the bottom.")]
-        [Range(0.05f, 0.7f)] public float horizon = 0.16f;
+        [Range(0.05f, 0.7f)] public float horizon = 0.22f;
         public float cameraHeight = 0.8f;
         public float focal = 1f;
         [Tooltip("World width covered by the road texture (dirt + grassy verges), metres.")]
@@ -38,9 +38,9 @@ namespace Witcher.Visuals
         [Tooltip("Road centre at the far end, lined up with the painted path in the vista.")]
         [Range(0f, 1f)] public float farCenterX = 0.545f;
         [Tooltip("Road starts fading out at this distance (m)...")]
-        public float fadeStart = 14f;
+        public float fadeStart = 16f;
         [Tooltip("...and is fully faded at this distance (m), so it merges into the painted path.")]
-        public float fadeEnd = 26f;
+        public float fadeEnd = 30f;
         [Tooltip("Horizontal resolution of the generated road image (pixel-art chunkiness).")]
         [Range(120, 1920)] public int roadPixelWidth = 960;
         [Tooltip("Draw the road as a GPU perspective mesh (smooth sub-pixel scrolling, mipmaps + trilinear + anisotropic filtering; no shimmer). Off = old CPU-rendered image.")]
@@ -49,6 +49,8 @@ namespace Witcher.Visuals
         [Range(16, 400)] public int roadMeshRows = 160;
         [Tooltip("Anisotropic filtering level for the road texture (GPU road).")]
         [Range(0, 16)] public int roadAniso = 8;
+        [Tooltip("Mip bias for the GPU road (negative = crisper detail while walking, 0 = softest).")]
+        [Range(-1.5f, 1f)] public float roadMipBias = -0.5f;
         [Tooltip("Bilinear filtering of the generated road image (smoother, less pixelated). Off = hard pixels.")]
         public bool smoothRoad = true;
 
@@ -235,6 +237,9 @@ namespace Witcher.Visuals
                 road.wrapModeV = TextureWrapMode.Repeat;
                 road.filterMode = road.mipmapCount > 1 ? FilterMode.Trilinear : FilterMode.Bilinear;
                 road.anisoLevel = roadAniso;
+                road.mipMapBias = roadMipBias;
+                Debug.Log("NearRoadLayer: GPU road active (" + road.width + "x" + road.height + ", mips " + road.mipmapCount
+                          + ", filter " + road.filterMode + ", wrapV " + road.wrapModeV + ")");
             }
             else
             {
@@ -463,7 +468,8 @@ namespace Witcher.Visuals
             if (_roadMesh != null)
             {
                 // GPU road: just rebuild the (tiny) strip mesh when something moved
-                if (!Mathf.Approximately(_meshPhase, _roadPhase) || !Mathf.Approximately(_meshCam, RoadCam) || _meshSize != size)
+                // rebuild every frame while walking (continuous fractional scroll), otherwise only on change
+                if (step > 0f || _meshPhase != _roadPhase || !Mathf.Approximately(_meshCam, RoadCam) || _meshSize != size)
                 {
                     _meshPhase = _roadPhase;
                     _meshCam = RoadCam;
