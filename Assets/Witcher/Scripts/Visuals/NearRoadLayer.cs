@@ -110,10 +110,10 @@ namespace Witcher.Visuals
         [Range(0f, 1f)] public float reveal01 = 0f;
         [Tooltip("Extra eye height at full reveal (x cameraHeight): road and tree bases drop lower on screen, like looking down from higher up.")]
         public float revealCameraRise = 1.2f;
-        [Tooltip("Fraction of the roadside trees removed at full reveal (they fade out gradually).")]
-        [Range(0f, 1f)] public float revealThin = 0.6f;
-        [Tooltip("Fraction of the undergrowth removed at full reveal.")]
-        [Range(0f, 1f)] public float revealUndergrowthThin = 0.25f;
+        [Tooltip("Fraction of the roadside trees removed at full reveal (1 = every tree has faded out by the top of the hill).")]
+        [Range(0f, 1f)] public float revealThin = 1f;
+        [Tooltip("Fraction of the undergrowth removed at full reveal (0 = bushes, boulders, juniper, fern and grass all stay).")]
+        [Range(0f, 1f)] public float revealUndergrowthThin = 0f;
         [Tooltip("Trees get this much shorter at full reveal (fraction).")]
         [Range(0f, 0.9f)] public float revealTreeShrink = 0.3f;
 
@@ -553,7 +553,7 @@ namespace Witcher.Visuals
                     hFrac = cap * (float)System.Math.Tanh(hFrac / cap);  // soft cap: close trees stay low, centre stays open
                 }
                 float alpha = Mathf.Clamp01((nearClip + spanSafe - z) / Mathf.Max(0.01f, emergeLength));
-                float thr = rv * (p.under ? revealUndergrowthThin : revealThin);
+                float thr = rv * (p.under ? revealUndergrowthThin : revealThin) * 1.08f; // x1.08: amount 1 => all gone
                 alpha *= Mathf.Clamp01(1f + (p.thin - thr) / 0.08f);    // hill-climb thinning (soft)
                 float hPx = hFrac * size.y;
                 float wPx = p.tex != null ? hPx * p.tex.width / (float)p.tex.height : hPx * 0.4f;
