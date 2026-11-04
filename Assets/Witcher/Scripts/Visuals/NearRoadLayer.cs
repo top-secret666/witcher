@@ -50,7 +50,7 @@ namespace Witcher.Visuals
         [Tooltip("Rows of pines on each side of the road (row 0 hugs the road edge).")]
         [Range(1, 6)] public int pineRows = 3;
         [Tooltip("Pines per row per side (total = rows x this x 2).")]
-        [Range(2, 40)] public int pinesPerRow = 16;
+        [Range(2, 40)] public int pinesPerRow = 12;
         [Tooltip("Depth range the pines cycle through (m). Larger = sparser.")]
         public float span = 18f;
         [Tooltip("Pines recycle to the far end once closer than this (m).")]
@@ -65,20 +65,30 @@ namespace Witcher.Visuals
         public float rowSpacing = 0.9f;
         [Tooltip("Random lateral jitter inside a row (m).")]
         public float rowJitter = 0.45f;
-        [Tooltip("Smallest world height of a near pine (m).")]
-        public float heightMin = 2.5f;
-        [Tooltip("Largest world height of a near pine (m).")]
-        public float heightMax = 6f;
+        [Tooltip("Real eye height (m) that cameraHeight stands for. All plant heights below are in REAL metres and are converted with cameraHeight / eyeHeightMeters, so they read correctly against the player's eye line.")]
+        public float eyeHeightMeters = 1.7f;
+        [Tooltip("Smallest spruce/fir height (real m).")]
+        public float heightMin = 4f;
+        [Tooltip("Largest spruce/fir height (real m).")]
+        public float heightMax = 12f;
         [Tooltip(">1 = more small trees with a few big ones, <1 = mostly big trees.")]
-        [Range(0.3f, 3f)] public float sizeSkew = 1.3f;
+        [Range(0.3f, 3f)] public float sizeSkew = 1.0f;
         [Tooltip("Chance that a pine is an extra-tall 'giant'.")]
-        [Range(0f, 1f)] public float giantChance = 0.15f;
+        [Range(0f, 1f)] public float giantChance = 0.08f;
         [Tooltip("Height multiplier for giant pines.")]
-        public float giantScale = 1.25f;
-        [Tooltip("Soft cap on the on-screen height of the TALLEST pines (fraction of screen height); smaller pines get a proportionally lower cap so close trees still differ in size and stay off the castle.")]
-        [Range(0.1f, 3f)] public float maxScreenHeight = 1.6f;
+        public float giantScale = 1.1f;
+        [Tooltip("Chance that a roadside tree is a dead spruce.")]
+        [Range(0f, 1f)] public float deadChance = 0.08f;
+        [Tooltip("Dead spruce height range (real m).")]
+        public Vector2 deadHeight = new Vector2(5f, 10f);
+        [Tooltip("Height range for WIDE sprites (wider than tall, e.g. the wide fir), real m.")]
+        public Vector2 wideFirHeight = new Vector2(3f, 6f);
+        [Tooltip("Bilinear filtering for the roadside sprites (smooth like the road). Off = hard pixels.")]
+        public bool smoothSprites = true;
+        [Tooltip("Soft cap on the on-screen height of the TALLEST pines (fraction of screen height); close trees run off the top of the screen.")]
+        [Range(0.1f, 3f)] public float maxScreenHeight = 2.5f;
         [Tooltip("On-screen cap of the smallest pine, relative to maxScreenHeight.")]
-        [Range(0.1f, 1f)] public float minCapFraction = 0.6f;
+        [Range(0.1f, 1f)] public float minCapFraction = 0.7f;
         [Tooltip("Height cap multiplier for pines in the middle of the screen (keeps the castle hill / painted path visible).")]
         [Range(0.1f, 1f)] public float centerCapFraction = 0.6f;
         [Tooltip("Within this distance from the screen centre (fraction of width) the centre cap applies fully...")]
@@ -98,8 +108,10 @@ namespace Witcher.Visuals
         const string RoadPath = "Pitch/T_L4_Road";
         static readonly string[] PinePaths =
         {
-            "Pitch/T_L4_NearPine_A", "Pitch/T_L4_NearPine_B", "Pitch/T_L4_NearPine_C", "Pitch/T_L4_NearPine_D"
+            "Pitch/T_L4_NearPine_A", "Pitch/T_L4_NearPine_B", "Pitch/T_L4_NearPine_C", "Pitch/T_L4_NearPine_D",
+            "Pitch/T_L4_NearPine_E", "Pitch/T_L4_NearPine_F"
         };
+        const string DeadPath = "Pitch/T_L4_NearPine_G";
 
         sealed class Pine
         {
@@ -115,6 +127,7 @@ namespace Witcher.Visuals
             public float tint;
             public float sortKey;
             public float size01;  // 0 smallest .. 1 tallest (drives the per-tree screen cap)
+            public bool dead;
         }
 
         RectTransform _rect;
@@ -133,6 +146,7 @@ namespace Witcher.Visuals
         readonly List<Pine> _pines = new List<Pine>();
         readonly List<Pine> _sorted = new List<Pine>();
         Texture2D[] _pineTex;
+        Texture2D _deadTex;
         System.Random _rng;
 
         float _speed;
@@ -176,10 +190,12 @@ namespace Witcher.Visuals
                 _pineTex[i] = Resources.Load<Texture2D>(PinePaths[i]);
                 if (_pineTex[i] != null)
                 {
-                    _pineTex[i].filterMode = FilterMode.Point;
+                    _pineTex[i].filterMode = SpriteFilter;
                     found++;
                 }
             }
+            _deadTex = Resources.Load<Texture2D>(DeadPath);
+            if (_deadTex != null) _deadTex.filterMode = SpriteFilter;
 
             if (found > 0)
             {
@@ -223,6 +239,13 @@ namespace Witcher.Visuals
             _dirty = true;
         }
 
+        FilterMode SpriteFilter => smoothSprites ? FilterMode.Bilinear : FilterMode.Point;
+
+        /// <summary>Real metres to layer units (cameraHeight = eye height).</summary>
+        float M(float meters) => meters * cameraHeight / Mathf.Max(0.1f, eyeHeightMeters);
+
+        float Rand(float a, float b) => Mathf.Lerp(a, b, (float)_rng.NextDouble());
+
         void Randomize(Pine p, int hint)
         {
             float edge = roadWorldWidth * 0.5f * dirtEdge + sideMin;
@@ -231,13 +254,23 @@ namespace Witcher.Visuals
             float r01 = Mathf.Pow((float)_rng.NextDouble(), Mathf.Max(0.05f, sizeSkew));
             if (_rng.NextDouble() < giantChance) r01 = Mathf.Min(1f, r01 + 0.5f);
             p.size01 = r01;
-            p.height = Mathf.Lerp(heightMin, heightMax, r01) * shrink;
-            if (r01 >= 0.999f || _rng.NextDouble() < giantChance * 0.5f) p.height *= Mathf.Max(1f, giantScale);
+            p.dead = _deadTex != null && _rng.NextDouble() < deadChance;
+            if (p.dead)
+            {
+                p.height = M(Rand(deadHeight.x, deadHeight.y)) * shrink;
+            }
+            else
+            {
+                p.height = M(Mathf.Lerp(heightMin, heightMax, r01)) * shrink;
+                if (r01 >= 0.999f || _rng.NextDouble() < giantChance * 0.5f) p.height *= Mathf.Max(1f, giantScale);
+            }
             p.tint = Mathf.Clamp01(pineTint * (1f + rowLighten * p.row) + ((float)_rng.NextDouble() * 2f - 1f) * tintJitter);
-            Texture2D t = null;
+            Texture2D t = p.dead ? _deadTex : null;
             for (int k = 0; k < _pineTex.Length && t == null; k++)
                 t = _pineTex[(hint + _rng.Next(_pineTex.Length) + k) % _pineTex.Length];
             p.tex = t;
+            if (!p.dead && t != null && t.width > t.height)
+                p.height = M(Rand(wideFirHeight.x, wideFirHeight.y)) * shrink; // wide fir: short and broad
             p.img.texture = t;
         }
 
