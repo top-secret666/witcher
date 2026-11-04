@@ -98,7 +98,9 @@ namespace Witcher.Visuals
         [Tooltip("Each row further out is this much smaller (fraction).")]
         [Range(0f, 0.5f)] public float rowShrink = 0.08f;
         [Tooltip("Colour multiplier for the near pines (lower = darker).")]
-        [Range(0f, 1f)] public float pineTint = 0.55f;
+        [Range(0f, 1f)] public float pineTint = 0.4f;
+        [Tooltip("Cool moonlight shade multiplied over the near trees and undergrowth (close = silhouette-like; blue keeps a faint moonlit rim).")]
+        public Color nearShade = new Color(0.82f, 0.9f, 1.05f, 1f);
         [Tooltip("Each row further out is this much lighter.")]
         [Range(0f, 0.3f)] public float rowLighten = 0.08f;
         [Tooltip("Random brightness variation per tree.")]
@@ -134,7 +136,7 @@ namespace Witcher.Visuals
         [Tooltip("Relative spawn weights: bush, juniper, fern, grass, boulder.")]
         public float[] undergrowthWeights = { 1f, 0.8f, 1.2f, 1.5f, 0.6f };
         [Tooltip("Colour multiplier for the undergrowth (lower = darker).")]
-        [Range(0f, 1f)] public float undergrowthTint = 0.7f;
+        [Range(0f, 1f)] public float undergrowthTint = 0.5f;
 
         const string RoadPath = "Pitch/T_L4_Road";
         static readonly string[] PinePaths =
@@ -566,7 +568,8 @@ namespace Witcher.Visuals
 
                 p.rt.sizeDelta = new Vector2(wPx, hPx);
                 p.rt.anchoredPosition = new Vector2(xPx, yb * size.y);
-                p.img.color = new Color(p.tint, p.tint, p.tint, alpha);
+                p.img.color = new Color(Mathf.Clamp01(p.tint * nearShade.r), Mathf.Clamp01(p.tint * nearShade.g),
+                                        Mathf.Clamp01(p.tint * nearShade.b), alpha);
                 p.sortKey = z * z + p.x * p.x; // painter order by true distance
                 _sorted.Add(p);
             }

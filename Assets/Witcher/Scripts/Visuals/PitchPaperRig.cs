@@ -42,6 +42,8 @@ namespace Witcher.Visuals
         [Tooltip("Speed used when there is no near-road layer: metres of travel per m/s of walk speed.")]
         public float l2TravelPerMeter = 0.55f;
         public float l2Acceleration = 3.5f;
+        [Tooltip("Shade of the L2 pines (darker = more silhouette-like; a little blue keeps the moonlit edges).")]
+        public Color l2Tint = new Color(0.6f, 0.65f, 0.75f, 1f);
 
         [Header("Hill-climb reveal (walk = climb, view opens up)")]
         [Tooltip("Gradually open the view while walking: roadside trees thin out and drop, L2 pines sink and fade, so the castle gets clearer.")]
@@ -343,7 +345,7 @@ namespace Witcher.Visuals
 
             if (l != null) { l.anchoredPosition = new Vector2(-x, y); l.localScale = scale; }
             if (r != null) { r.anchoredPosition = new Vector2(x, y); r.localScale = scale; }
-            var c = new Color(1f, 1f, 1f, alpha);
+            var c = new Color(l2Tint.r, l2Tint.g, l2Tint.b, alpha);
             if (li != null) { li.color = c; li.enabled = alpha > 0.003f; }
             if (ri != null) { ri.color = c; ri.enabled = alpha > 0.003f; }
         }
