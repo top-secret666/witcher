@@ -66,21 +66,21 @@ namespace Witcher.Visuals
         [Tooltip("Random lateral jitter inside a row (m).")]
         public float rowJitter = 0.45f;
         [Tooltip("Smallest world height of a near pine (m).")]
-        public float heightMin = 1.4f;
+        public float heightMin = 2.5f;
         [Tooltip("Largest world height of a near pine (m).")]
-        public float heightMax = 4.2f;
+        public float heightMax = 6f;
         [Tooltip(">1 = more small trees with a few big ones, <1 = mostly big trees.")]
         [Range(0.3f, 3f)] public float sizeSkew = 1.3f;
         [Tooltip("Chance that a pine is an extra-tall 'giant'.")]
         [Range(0f, 1f)] public float giantChance = 0.15f;
         [Tooltip("Height multiplier for giant pines.")]
-        public float giantScale = 1.35f;
+        public float giantScale = 1.25f;
         [Tooltip("Soft cap on the on-screen height of the TALLEST pines (fraction of screen height); smaller pines get a proportionally lower cap so close trees still differ in size and stay off the castle.")]
-        [Range(0.1f, 2f)] public float maxScreenHeight = 0.55f;
+        [Range(0.1f, 3f)] public float maxScreenHeight = 1.6f;
         [Tooltip("On-screen cap of the smallest pine, relative to maxScreenHeight.")]
-        [Range(0.1f, 1f)] public float minCapFraction = 0.45f;
+        [Range(0.1f, 1f)] public float minCapFraction = 0.6f;
         [Tooltip("Height cap multiplier for pines in the middle of the screen (keeps the castle hill / painted path visible).")]
-        [Range(0.1f, 1f)] public float centerCapFraction = 0.5f;
+        [Range(0.1f, 1f)] public float centerCapFraction = 0.6f;
         [Tooltip("Within this distance from the screen centre (fraction of width) the centre cap applies fully...")]
         [Range(0f, 0.5f)] public float clearZoneInner = 0.12f;
         [Tooltip("...and beyond this distance pines get the full cap.")]
