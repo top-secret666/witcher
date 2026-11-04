@@ -42,9 +42,9 @@ namespace Witcher.Visuals
         [Tooltip("...and is fully faded at this distance (m), so it merges into the painted path.")]
         public float fadeEnd = 30f;
         [Tooltip("Horizontal resolution of the generated road image (pixel-art chunkiness).")]
-        [Range(120, 1920)] public int roadPixelWidth = 960;
-        [Tooltip("Draw the road as a GPU perspective mesh (smooth sub-pixel scrolling, mipmaps + trilinear + anisotropic filtering; no shimmer). Off = old CPU-rendered image.")]
-        public bool gpuRoad = true;
+        [Range(120, 1920)] public int roadPixelWidth = 800;
+        [Tooltip("Experimental: draw the road as a GPU UI mesh (NearRoadMesh). Off (default) = CPU-rendered road image with smooth filtering, which is the reliable path.")]
+        public bool gpuRoad = false;
         [Tooltip("Horizontal strips of the GPU road mesh (more = more exact perspective).")]
         [Range(16, 400)] public int roadMeshRows = 160;
         [Tooltip("Anisotropic filtering level for the road texture (GPU road).")]
@@ -185,6 +185,7 @@ namespace Witcher.Visuals
         NearRoadMesh _roadMesh;
         Texture2D _roadSrcTex;
         float _meshPhase = -1f, _meshCam = -1f;
+        bool _meshLogged;
         Vector2 _meshSize;
         Texture2D _roadTex;
         Color32[] _src;
@@ -192,6 +193,12 @@ namespace Witcher.Visuals
         Color32[] _buf;
         int[] _uIdx;
         float[] _rowV;
+        // smooth CPU road: premultiplied mip chain + per-pixel fractional u + per-row depth/mip
+        Color32[][] _mips;
+        int[] _mipW, _mipH;
+        float[] _uF;
+        float[] _rowVt;   // z / tileLength (tiles)
+        int[] _rowMip;
         byte[] _rowFade;
         int _rtW, _rtH;
         Vector2 _builtSize;
@@ -244,6 +251,7 @@ namespace Witcher.Visuals
             else
             {
                 _src = ReadPixelsSafe(road, out _srcW, out _srcH);
+                BuildMips();
             }
 
             if (gpuRoad && road != null)
@@ -272,6 +280,9 @@ namespace Witcher.Visuals
             _roadImg.raycastTarget = false;
             _roadImg.color = Color.white;
             _roadImg.enabled = _src != null && _roadMesh == null;
+            if (_roadMesh == null) roadGo.transform.SetAsFirstSibling();
+            if (_src != null && _roadMesh == null)
+                Debug.Log("NearRoadLayer: CPU road active (" + _srcW + "x" + _srcH + ", smooth " + smoothRoad + ", " + roadPixelWidth + " px wide)");
 
             _pineTex = new Texture2D[PinePaths.Length];
             int found = 0;
@@ -511,6 +522,11 @@ namespace Witcher.Visuals
             int rows = Mathf.Clamp(roadMeshRows, 4, 1000);
             float halfW = roadWorldWidth * 0.5f;
             float tl = Mathf.Max(0.01f, tileLength);
+            if (!_meshLogged)
+            {
+                _meshLogged = true;
+                Debug.Log("NearRoadLayer: GPU road mesh rows=" + rows + " rect=" + rect + " yTop=" + yTop + " color=" + col);
+            }
             var v = UIVertex.simpleVert;
             for (int i = 0; i <= rows; i++)
             {
@@ -585,14 +601,28 @@ namespace Witcher.Visuals
             float cam = _builtCam;
 
             float texPerMeter = _srcH / Mathf.Max(0.01f, tileLength);
+            if (_uF == null || _uF.Length != n) _uF = new float[n];
+            if (_rowVt == null || _rowVt.Length != _rtH) _rowVt = new float[_rtH];
+            if (_rowMip == null || _rowMip.Length != _rtH) _rowMip = new int[_rtH];
+            float pxPerScreenY = _rtH / Mathf.Max(0.0001f, horizon);
             for (int r = 0; r < _rtH; r++)
             {
                 float y = (r + 0.5f) / _rtH * horizon;        // fraction of screen height from bottom
                 float sy = Mathf.Max(0.0005f, horizon - y);   // distance below the vanishing line
                 float z = cam * focal / sy;                   // world depth of this row
                 _rowV[r] = z * texPerMeter;
+                _rowVt[r] = z / Mathf.Max(0.01f, tileLength);
                 float fade = Mathf.Clamp01((fadeEnd - z * cameraHeight / Mathf.Max(0.01f, cam)) / Mathf.Max(0.01f, fadeEnd - fadeStart));
                 _rowFade[r] = (byte)Mathf.RoundToInt(fade * 255f);
+
+                // texture footprint of one output pixel -> mip level (fixed per row, so no shimmer while scrolling)
+                float dzdy = cam * focal / (sy * sy) / pxPerScreenY;        // world depth per output row
+                float dv = dzdy * texPerMeter;                               // texels per output row
+                float du = (aspect * z / focal / _rtW) / Mathf.Max(0.01f, roadWorldWidth) * _srcW; // texels per output column
+                float fp = Mathf.Sqrt(Mathf.Max(1e-6f, dv * du));            // geometric mean ~ anisotropic compromise
+                int lvl = Mathf.Clamp(Mathf.RoundToInt(Mathf.Log(Mathf.Max(1f, fp), 2f) + roadMipBias), 0,
+                                      _mips != null ? _mips.Length - 1 : 0);
+                _rowMip[r] = lvl;
 
                 float cx = CenterX(y);
                 for (int c = 0; c < _rtW; c++)
@@ -601,14 +631,54 @@ namespace Witcher.Visuals
                     float xw = (sx - cx) * aspect * z / focal;
                     float u = xw / Mathf.Max(0.01f, roadWorldWidth) + 0.5f;
                     _uIdx[r * _rtW + c] = (u >= 0f && u < 1f) ? Mathf.Min(_srcW - 1, (int)(u * _srcW)) : -1;
+                    _uF[r * _rtW + c] = (u >= 0f && u < 1f) ? u : -1f;
                 }
             }
             _dirty = true;
         }
 
+        /// <summary>Premultiplied-alpha box-filtered mip chain of the road texture (no dark fringes at the ragged edges).</summary>
+        void BuildMips()
+        {
+            var levels = new List<Color32[]>();
+            var ws = new List<int>();
+            var hs = new List<int>();
+            int w = _srcW, h = _srcH;
+            var l0 = new Color32[w * h];
+            for (int i = 0; i < l0.Length; i++)
+            {
+                var c = _src[i];
+                l0[i] = new Color32((byte)(c.r * c.a / 255), (byte)(c.g * c.a / 255), (byte)(c.b * c.a / 255), c.a);
+            }
+            levels.Add(l0); ws.Add(w); hs.Add(h);
+            while (w > 4 && h > 4 && levels.Count < 12)
+            {
+                var prev = levels[levels.Count - 1];
+                int nw = w / 2, nh = h / 2;
+                var m = new Color32[nw * nh];
+                for (int y = 0; y < nh; y++)
+                {
+                    int r0 = (2 * y) * w, r1 = (2 * y + 1) * w;
+                    for (int x = 0; x < nw; x++)
+                    {
+                        var a = prev[r0 + 2 * x]; var b = prev[r0 + 2 * x + 1];
+                        var c = prev[r1 + 2 * x]; var d = prev[r1 + 2 * x + 1];
+                        m[y * nw + x] = new Color32((byte)((a.r + b.r + c.r + d.r + 2) >> 2), (byte)((a.g + b.g + c.g + d.g + 2) >> 2),
+                                                    (byte)((a.b + b.b + c.b + d.b + 2) >> 2), (byte)((a.a + b.a + c.a + d.a + 2) >> 2));
+                    }
+                }
+                levels.Add(m); ws.Add(nw); hs.Add(nh);
+                w = nw; h = nh;
+            }
+            _mips = levels.ToArray();
+            _mipW = ws.ToArray();
+            _mipH = hs.ToArray();
+        }
+
         void DrawRoad()
         {
             if (_src == null || _roadTex == null || _uIdx == null) return;
+            if (smoothRoad && _mips != null && _uF != null) { DrawRoadSmooth(); return; }
             float scroll = _roadPhase / Mathf.Max(0.01f, tileLength) * _srcH;
             var clear = new Color32(0, 0, 0, 0);
             for (int r = 0; r < _rtH; r++)
@@ -630,6 +700,58 @@ namespace Witcher.Visuals
                     Color32 s = _src[vOff + ui];
                     if (fa != 255) s.a = (byte)(s.a * fa / 255);
                     _buf[row + c] = s;
+                }
+            }
+            _roadTex.SetPixels32(_buf);
+            _roadTex.Apply(false);
+        }
+
+        /// <summary>
+        /// Bilinear sampling from the row's mip level with a FRACTIONAL scroll offset: the road glides
+        /// continuously instead of jumping texel by texel (that jumping was the shimmer/pixelation).
+        /// </summary>
+        void DrawRoadSmooth()
+        {
+            float scrollTiles = _roadPhase / Mathf.Max(0.01f, tileLength);
+            var clear = new Color32(0, 0, 0, 0);
+            for (int r = 0; r < _rtH; r++)
+            {
+                int row = r * _rtW;
+                int fa = _rowFade[r];
+                if (fa == 0)
+                {
+                    for (int c = 0; c < _rtW; c++) _buf[row + c] = clear;
+                    continue;
+                }
+                int L = _rowMip[r];
+                var m = _mips[L];
+                int W = _mipW[L], H = _mipH[L];
+                float vy = (_rowVt[r] + scrollTiles) * H - 0.5f;
+                int y0 = Mathf.FloorToInt(vy);
+                int fy = (int)((vy - y0) * 256f);
+                y0 %= H; if (y0 < 0) y0 += H;
+                int y1 = y0 + 1; if (y1 >= H) y1 = 0;
+                int o0 = y0 * W, o1 = y1 * W;
+                for (int c = 0; c < _rtW; c++)
+                {
+                    float u = _uF[row + c];
+                    if (u < 0f) { _buf[row + c] = clear; continue; }
+                    float ux = u * W - 0.5f;
+                    if (ux < 0f) ux = 0f;
+                    int x0 = (int)ux;
+                    if (x0 > W - 1) x0 = W - 1;
+                    int fx = (int)((ux - x0) * 256f);
+                    int x1 = x0 + 1 < W ? x0 + 1 : W - 1;
+                    var a = m[o0 + x0]; var b = m[o0 + x1]; var cc = m[o1 + x0]; var d = m[o1 + x1];
+                    int w00 = (256 - fx) * (256 - fy), w10 = fx * (256 - fy), w01 = (256 - fx) * fy, w11 = fx * fy;
+                    int A = (a.a * w00 + b.a * w10 + cc.a * w01 + d.a * w11) >> 16;
+                    if (A <= 0) { _buf[row + c] = clear; continue; }
+                    int R = (a.r * w00 + b.r * w10 + cc.r * w01 + d.r * w11) >> 16;
+                    int G = (a.g * w00 + b.g * w10 + cc.g * w01 + d.g * w11) >> 16;
+                    int B = (a.b * w00 + b.b * w10 + cc.b * w01 + d.b * w11) >> 16;
+                    // un-premultiply for the UI shader, then apply the distance fade
+                    R = Mathf.Min(255, R * 255 / A); G = Mathf.Min(255, G * 255 / A); B = Mathf.Min(255, B * 255 / A);
+                    _buf[row + c] = new Color32((byte)R, (byte)G, (byte)B, (byte)(A * fa / 255));
                 }
             }
             _roadTex.SetPixels32(_buf);
