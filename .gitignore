@@ -47,3 +47,19 @@ Desktop.ini
 sysinfo.txt
 crashlytics-build.properties
 AddressableAssetsData/*/addressables_content_state.bin
+
+# Build artifacts
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# Unity crash recovery and local backups
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+/[Bb]ackup/
+/[Bb]ackups/
+
+# Local debug/check renders (e.g. _moon_move_check.png)
+/[Aa]ssets/**/_*_check.png
+/[Aa]ssets/**/_*_check.png.meta
